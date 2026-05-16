@@ -499,23 +499,30 @@ function _queueSync(){
   _syncTimer=setTimeout(syncToCloud,1500);
 }
 
-/** Client-side DB merge — same logic as GAS mergeDB.
- *  Merges `incoming` into the live DB array by id, with lastModified winning on conflict.
- *  Ignores empty/null payloads so a blank cloud can never wipe local data. */
+/** Client-side DB merge — cloud is authoritative (GAS does full replace on write).
+ *  - Items in cloud: use cloud version unless local has a strictly newer lastModified.
+ *  - Items only in cloud: add them (new entry from another device).
+ *  - Items only in local WITH a lastModified: unsynced local change, keep until push lands.
+ *  - Items only in local WITHOUT a lastModified: cloud deleted them, do not restore.
+ *  Ignores empty cloud responses so a blank sheet can never wipe local data. */
 function _mergeDBLocal(incoming){
   if(!incoming||!Array.isArray(incoming)||incoming.length===0)return false;
-  const map={};
-  DB.forEach(item=>{if(item&&item.id)map[item.id]=item;});
-  incoming.forEach(item=>{
+  const cloudMap={};
+  incoming.forEach(item=>{if(item&&item.id)cloudMap[item.id]=item;});
+  // Start from cloud, then selectively apply local wins
+  const result=Object.assign({},cloudMap);
+  DB.forEach(item=>{
     if(!item||!item.id)return;
-    if(!map[item.id]){map[item.id]=item;}
-    else{
-      const exTs=map[item.id].lastModified||0;
-      const inTs=item.lastModified||(exTs+1);
-      if(inTs>=exTs)map[item.id]=item;
+    const cloud=cloudMap[item.id];
+    if(cloud){
+      if((item.lastModified||0)>(cloud.lastModified||0))result[item.id]=item;
+    }else if(item.lastModified){
+      // Local-only with a timestamp = unsynced add/edit, keep it
+      result[item.id]=item;
     }
+    // Local-only, no timestamp = old data the cloud doesn't have = deleted, drop it
   });
-  DB=Object.values(map);
+  DB=Object.values(result);
   localStorage.setItem('codex2_db',JSON.stringify(DB));
   return true;
 }
@@ -2007,6 +2014,7 @@ function savePromote(id){
   item.ollieReview=document.getElementById('pm-or').value||item.ollieReview;
   item.jemimaReview=document.getElementById('pm-jr').value||item.jemimaReview;
   item.priority=null;if(!item.dateAdded)item.dateAdded=new Date().toISOString().split('T')[0];
+  markDirty(item);
   saveDB();closeModal();
   const a=avg(item);toast(`"${item.title}" updated${a?` · ★${a.toFixed(1)} avg`:''}`);nav(VIEW);
 }
@@ -2082,6 +2090,7 @@ function saveEntry(id){
     dateAdded:id?(DB.find(d=>d.id===id)?.dateAdded||new Date().toISOString().split('T')[0]):new Date().toISOString().split('T')[0],
     priority:bwl?(parseInt(document.getElementById('ef-pri')?.value)||3):null
   };
+  markDirty(entry);
   if(id){const idx=DB.findIndex(d=>d.id===id);if(idx!==-1)DB[idx]=entry;}else DB.push(entry);
   // Sync any image URLs entered here into PEOPLE_DB so they propagate across all films
   const pName=entry.director||entry.creator;
