@@ -99,6 +99,20 @@ textarea.inp{resize:vertical;min-height:64px;}
 .batch-bar{background:rgba(246,144,0,0.07);border:1px solid rgba(246,144,0,0.28);border-radius:var(--r);padding:9px 13px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 .fade-up{animation:fadeUp 0.28s ease forwards;}
+#ctooltip{position:fixed;z-index:9999;pointer-events:none;background:rgba(17,34,44,0.97);border:1px solid rgba(83,177,177,0.5);border-radius:var(--r);padding:10px 12px;backdrop-filter:blur(20px);box-shadow:0 8px 32px rgba(0,0,0,0.55),0 0 0 1px rgba(83,177,177,0.08);max-width:210px;min-width:140px;animation:fadeUp 0.15s ease;}
+.genre-link{cursor:pointer;transition:all 0.2s;border-radius:2px;}
+.genre-link:hover{background:rgba(83,177,177,0.2)!important;border-color:rgba(83,177,177,0.6)!important;color:var(--cyan)!important;}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+.cal-cell{min-height:52px;background:rgba(0,0,0,0.15);border:1px solid rgba(83,177,177,0.1);border-radius:var(--r);padding:3px;font-size:0.6rem;color:var(--muted);position:relative;overflow:hidden;}
+.cal-cell.has-watch{border-color:rgba(246,144,0,0.3);background:rgba(246,144,0,0.05);color:var(--text2);cursor:pointer;}
+.cal-cell.has-watch:hover{border-color:rgba(246,144,0,0.6);background:rgba(246,144,0,0.1);}
+.cal-cell.today{border-color:rgba(83,177,177,0.5);}
+.blindspot-mini{flex-shrink:0;width:88px;cursor:pointer;border-radius:var(--r);overflow:hidden;border:1px solid rgba(83,177,177,0.22);transition:transform 0.2s,box-shadow 0.2s;position:relative;aspect-ratio:2/3;}
+.blindspot-mini:hover{transform:scale(1.04);box-shadow:0 0 20px rgba(246,144,0,0.3);}
+.more-rail-card{flex-shrink:0;width:100px;cursor:pointer;border-radius:var(--r);overflow:hidden;border:1px solid rgba(83,177,177,0.22);transition:transform 0.2s,box-shadow 0.2s;position:relative;aspect-ratio:2/3;}
+.more-rail-card:hover{transform:scale(1.05);box-shadow:0 0 22px rgba(246,144,0,0.35);}
+.hist-bar-wrap{display:flex;align-items:flex-end;gap:1px;height:80px;}
+.hist-bar{border-radius:1px 1px 0 0;transition:opacity 0.2s;min-width:12px;}
 </style>
 
 <!-- ═══ MOBILE MODE STYLES ═══
@@ -296,6 +310,12 @@ body.mx #diary-inner>div:nth-child(2){padding:20px 14px 80px !important;}
 <!-- TOAST -->
 <div id="toast"><div class="toast-inner"><span id="t-icon">✓</span><span id="t-msg"></span></div></div>
 
+<!-- CONTEXT TOOLTIP -->
+<div id="ctooltip" style="display:none;"></div>
+
+<!-- POSTER WALL EXPORT -->
+<div id="posterwall-view" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.94);overflow:auto;padding:32px;" onclick="if(event.target===this)closePosterWall()"></div>
+
 <!-- MOBILE TOPBAR — shown only when body.mx is active -->
 <div id="mobile-topbar">
   <div style="display:flex;align-items:center;gap:8px;">
@@ -430,6 +450,9 @@ let GENRE_TYPE='Film'; // filter for Genre Diversity chart: 'Film'|'Show'|'Album
 let _editSeries=[]; // series ratings buffer while edit modal is open
 let _syncTimer=null;
 let _pollTimer=null;
+let NAV_TRAIL=[];
+let _diaryCalMode=false;
+let _diaryCalMonth=null;
 
 // ── Local-first persistence: sync to localStorage immediately, queue cloud push ──
 function loadDB(){const s=localStorage.getItem('codex2_db');DB=s?JSON.parse(s):(CODEX_CONFIG.API_URL?[]:JSON.parse(JSON.stringify(SEED)));}
@@ -731,6 +754,181 @@ function twMins(items){
   },0);
 }
 
+// ─── Filter shortcuts ──────────────────────────────────────────────────────────
+function setGenreFilter(g,t){closeCinema();if(t)ATAB=t;FILTERS.genre=g;nav('archive');}
+function setDecadeFilter(year,t){closeCinema();if(t)ATAB=t;FILTERS.decade=String(Math.floor(year/10)*10);nav('archive');}
+
+// ─── Tooltip ───────────────────────────────────────────────────────────────────
+let _ttTimer=null;
+function showTooltip(e,type,name){
+  clearTimeout(_ttTimer);
+  _ttTimer=setTimeout(()=>{
+    const el=document.getElementById('ctooltip');
+    el.innerHTML=_renderTooltip(type,name);
+    el.style.display='block';
+    const r=e.target.getBoundingClientRect();
+    const tw=el.offsetWidth,th=el.offsetHeight;
+    let x=r.left+r.width/2-tw/2,y=r.top-th-10;
+    if(y<8)y=r.bottom+10;
+    if(x+tw>window.innerWidth-8)x=window.innerWidth-tw-8;
+    if(x<8)x=8;
+    el.style.left=x+'px';el.style.top=y+'px';
+  },300);
+}
+function hideTooltip(){clearTimeout(_ttTimer);const el=document.getElementById('ctooltip');if(el)el.style.display='none';}
+function _renderTooltip(type,name){
+  if(type==='genre'){
+    const items=DB.filter(d=>(d.genre||[]).includes(name));
+    const rated=items.filter(d=>d.ollieRating||d.jemimaRating);
+    const avgSc=rated.length?(rated.reduce((s,d)=>s+bay(d),0)/rated.length).toFixed(2):'—';
+    const top3=[...items].sort((a,b)=>bay(b)-bay(a)).slice(0,3);
+    return`<div style="font-size:0.65rem;font-weight:700;color:var(--cyan);letter-spacing:0.08em;margin-bottom:5px;text-transform:uppercase;">${name}</div>
+    <div style="font-size:0.62rem;color:var(--muted);margin-bottom:6px;">${items.length} entries · avg <span style="color:var(--gold);font-weight:700;">⊛${avgSc}</span></div>
+    ${top3.map(i=>`<div style="font-size:0.68rem;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${i.title}</div>`).join('')}`;
+  }
+  if(type==='person'){
+    const img=pImg(name);
+    const nl=name.toLowerCase();
+    const works=DB.filter(d=>getDirectors(d).some(dn=>dn.toLowerCase()===nl)||(d.cast||[]).some(c=>c.toLowerCase()===nl));
+    const rated=works.filter(w=>w.ollieRating||w.jemimaRating);
+    const avgBay=rated.length?(rated.reduce((s,w)=>s+bay(w),0)/rated.length).toFixed(2):'—';
+    const top3=[...works].sort((a,b)=>bay(b)-bay(a)).slice(0,3);
+    return`<div style="display:flex;gap:8px;margin-bottom:6px;align-items:flex-start;">
+      ${img?`<img src="${img}" style="width:28px;height:42px;object-fit:cover;border-radius:2px;flex-shrink:0;border:1px solid rgba(83,177,177,0.3);" onerror="this.style.display='none'">`:''}
+      <div><div style="font-size:0.65rem;font-weight:700;color:var(--cyan);margin-bottom:3px;">${name}</div>
+      <div style="font-size:0.62rem;color:var(--muted);">${works.length} works · <span style="color:var(--gold);font-weight:700;">⊛${avgBay}</span></div></div></div>
+    ${top3.map(i=>`<div style="font-size:0.68rem;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${i.title}</div>`).join('')}`;
+  }
+  return'';
+}
+
+// ─── Random Pick ───────────────────────────────────────────────────────────────
+function randomPick(){
+  const pool=DB.filter(d=>d.ollieStatus==='Watchlist'&&d.jemimaStatus==='Watchlist');
+  if(!pool.length){toast('No shared watchlist entries!','⚠');return;}
+  const item=pool[Math.floor(Math.random()*pool.length)];
+  openModal(`<h3 style="font-family:'Barlow Condensed',sans-serif;font-size:1.6rem;font-weight:900;margin-bottom:16px;">🎲 RANDOM PICK</h3>
+    <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:18px;">
+      <img src="${item.mediaImageUrl||''}" style="width:70px;height:105px;object-fit:cover;border-radius:var(--r);border:1px solid var(--steel);flex-shrink:0;" onerror="this.style.background='var(--steel)'">
+      <div>
+        <p style="font-family:'Barlow Condensed',sans-serif;font-size:1.5rem;font-weight:900;line-height:1.1;margin-bottom:4px;">${item.title}</p>
+        <p style="font-size:0.72rem;color:var(--muted);margin-bottom:6px;">${item.year} · ${getDirectors(item).join(', ')||'—'}</p>
+        ${item.imdbRating?`<span style="font-size:0.72rem;color:var(--accent);">★ IMDb ${item.imdbRating}</span>`:''}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+      <button class="btn btn-g btn-sm" onclick="closeModal();randomPick()">🎲 REROLL</button>
+      <button class="btn btn-g btn-sm" onclick="closeModal();openCinema('${item.id}')">VIEW DETAILS</button>
+      <button class="btn btn-o btn-sm" onclick="closeModal();openPromoteModal('${item.id}')">✓ WATCH THIS</button>
+    </div>`);
+}
+
+// ─── Poster Wall Export ─────────────────────────────────────────────────────────
+let _pwFilters={type:'all',minScore:0,count:40};
+function openPosterWall(f){
+  if(f)Object.assign(_pwFilters,f);
+  let pool=DB.filter(d=>d.ollieRating&&d.jemimaRating);
+  if(_pwFilters.type!=='all')pool=pool.filter(d=>d.type===_pwFilters.type);
+  if(_pwFilters.minScore>0)pool=pool.filter(d=>bay(d)>=_pwFilters.minScore);
+  const top=pool.sort((a,b)=>bay(b)-bay(a)).slice(0,_pwFilters.count);
+  const cols=_pwFilters.count<=20?5:_pwFilters.count<=30?6:_pwFilters.count<=40?8:10;
+  const el=document.getElementById('posterwall-view');
+  el.innerHTML=`<div style="max-width:${cols*120+80}px;margin:0 auto;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:2.2rem;font-weight:900;color:var(--accent);letter-spacing:0.07em;text-shadow:0 0 30px rgba(246,144,0,0.4);">CODEX — TOP RATED</h2>
+        <p style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Showing ${top.length} entries by Bayesian Common Ground · Ollie & Jemima · ${new Date().toLocaleDateString('en-GB',{year:'numeric',month:'long'})}</p>
+      </div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;">
+        <button class="btn btn-g btn-sm" onclick="window.print()" style="@media print{display:none}">🖨 PRINT</button>
+        <button class="btn btn-g btn-sm" onclick="closePosterWall()">✕ CLOSE</button>
+      </div>
+    </div>
+    <!-- FILTERS -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:10px 14px;background:rgba(0,0,0,0.3);border-radius:var(--r);border:1px solid rgba(83,177,177,0.15);">
+      <span style="font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);flex-shrink:0;">FILTER</span>
+      <div style="display:flex;gap:3px;">
+        ${['all','Film','Show','Album'].map(t=>`<button onclick="openPosterWall({type:'${t}'})" style="padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;border-radius:2px;cursor:pointer;border:1px solid ${_pwFilters.type===t?'var(--cyan)':'var(--steel)'};background:${_pwFilters.type===t?'rgba(83,177,177,0.18)':'transparent'};color:${_pwFilters.type===t?'var(--cyan)':'var(--muted)'};">${t==='all'?'ALL':t.toUpperCase()}</button>`).join('')}
+      </div>
+      <span style="color:var(--steel);font-size:0.7rem;">|</span>
+      <span style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);">MIN ⊛</span>
+      ${[0,6,7,7.5,8,8.5,9].map(v=>`<button onclick="openPosterWall({minScore:${v}})" style="padding:4px 9px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;border-radius:2px;cursor:pointer;border:1px solid ${_pwFilters.minScore===v?'var(--gold)':'var(--steel)'};background:${_pwFilters.minScore===v?'rgba(246,198,36,0.15)':'transparent'};color:${_pwFilters.minScore===v?'var(--gold)':'var(--muted)'};">${v===0?'ANY':v}</button>`).join('')}
+      <span style="color:var(--steel);font-size:0.7rem;">|</span>
+      <span style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);">TOP</span>
+      ${[20,30,40,60].map(n=>`<button onclick="openPosterWall({count:${n}})" style="padding:4px 9px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;border-radius:2px;cursor:pointer;border:1px solid ${_pwFilters.count===n?'var(--accent)':'var(--steel)'};background:${_pwFilters.count===n?'rgba(246,144,0,0.15)':'transparent'};color:${_pwFilters.count===n?'var(--accent)':'var(--muted)'};">${n}</button>`).join('')}
+    </div>
+    <!-- GRID -->
+    ${top.length?`<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:5px;">
+      ${top.map((item,idx)=>{const sc=bay(item);const rank=idx+1;return`
+        <div style="position:relative;aspect-ratio:2/3;border-radius:var(--r);overflow:hidden;border:1px solid rgba(83,177,177,0.2);cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;" onmouseover="this.style.transform='scale(1.03)';this.style.boxShadow='0 0 20px rgba(246,198,36,0.4)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none'" onclick="closePosterWall();openCinema('${item.id}')">
+          <img src="${item.mediaImageUrl||''}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.style.background='var(--surface2)'">
+          <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.97) 0%,rgba(17,34,44,0.2) 50%,transparent 100%);"></div>
+          <div style="position:absolute;top:5px;left:5px;background:rgba(17,34,44,0.75);border-radius:2px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:var(--muted);">#${rank}</div>
+          <div style="position:absolute;bottom:0;left:0;right:0;padding:6px;">
+            <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.7rem;line-height:1.1;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-size:0.58rem;color:var(--muted);">${item.year}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;font-weight:700;color:var(--gold);text-shadow:0 0 8px rgba(246,198,36,0.5);">${sc.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>`}).join('')}
+    </div>
+    <div style="height:1px;background:linear-gradient(to right,transparent,rgba(83,177,177,0.3),transparent);margin:20px 0;"></div>
+    <p style="text-align:center;font-size:0.58rem;color:rgba(83,177,177,0.35);letter-spacing:0.14em;font-family:'JetBrains Mono',monospace;">CODEX MEDIA ARCHIVAL SYSTEM — BAYESIAN COMMON GROUND RANKING</p>`
+    :`<div style="text-align:center;padding:60px;color:var(--muted);"><p style="font-size:1.5rem;margin-bottom:8px;">📭</p><p>No entries match these filters.</p></div>`}
+  </div>`;
+  el.style.display='block';
+}
+function closePosterWall(){document.getElementById('posterwall-view').style.display='none';}
+
+// ─── Diary Calendar ─────────────────────────────────────────────────────────────
+function _renderDiaryCal(item){
+  const log=item.watchLog||[];
+  if(!_diaryCalMonth){
+    const dates=log.map(e=>e.date).filter(Boolean).sort();
+    _diaryCalMonth=dates.length?new Date(dates[dates.length-1]+'T12:00:00'):new Date();
+    _diaryCalMonth=new Date(_diaryCalMonth.getFullYear(),_diaryCalMonth.getMonth(),1);
+  }
+  const yr=_diaryCalMonth.getFullYear(),mo=_diaryCalMonth.getMonth();
+  const monthName=_diaryCalMonth.toLocaleDateString('en-GB',{month:'long',year:'numeric'}).toUpperCase();
+  const firstDay=new Date(yr,mo,1).getDay();
+  const daysInMonth=new Date(yr,mo+1,0).getDate();
+  const today=new Date();
+  const byDate={};
+  log.forEach(e=>{if(e.date){byDate[e.date]=(byDate[e.date]||[]).concat(e);}});
+  const pad2=n=>String(n).padStart(2,'0');
+  let cells='';
+  const blanks=(firstDay+6)%7;
+  for(let i=0;i<blanks;i++)cells+=`<div class="cal-cell"></div>`;
+  for(let d=1;d<=daysInMonth;d++){
+    const key=`${yr}-${pad2(mo+1)}-${pad2(d)}`;
+    const entries=byDate[key]||[];
+    const isToday=today.getFullYear()===yr&&today.getMonth()===mo&&today.getDate()===d;
+    cells+=`<div class="cal-cell ${entries.length?'has-watch':''} ${isToday?'today':''}" ${entries.length?`onclick="_diaryCalMode=false;openDiaryView('${item.id}')"`:''}>
+      <span style="font-size:0.58rem;${isToday?'color:var(--cyan);font-weight:700;':''}">${d}</span>
+      ${entries.length?`<div style="margin-top:2px;">${entries.slice(0,2).map(e=>`<div style="font-size:0.52rem;background:rgba(246,144,0,0.25);border-radius:1px;padding:1px 2px;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">${e.rewatched?'↺':'◉'} ${e.ollieRating||e.jemimaRating?((e.ollieRating||0)/1).toFixed(0)+(e.jemimaRating?'/'+e.jemimaRating:''):''}</div>`).join('')}</div>`:''}
+    </div>`;
+  }
+  return`<div style="margin-bottom:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <button class="btn btn-g btn-sm" onclick="_diaryNavMonth('${item.id}',-1)">‹ PREV</button>
+      <span style="font-size:0.7rem;font-weight:700;letter-spacing:0.1em;color:var(--cyan);">${monthName}</span>
+      <button class="btn btn-g btn-sm" onclick="_diaryNavMonth('${item.id}',1)">NEXT ›</button>
+    </div>
+    <div class="cal-grid" style="margin-bottom:5px;">
+      ${['M','T','W','T','F','S','S'].map(d=>`<div style="text-align:center;font-size:0.58rem;color:var(--muted);font-weight:700;padding:3px 0;">${d}</div>`).join('')}
+    </div>
+    <div class="cal-grid">${cells}</div>
+  </div>`;
+}
+
+function _diaryNavMonth(itemId,delta){
+  _diaryCalMonth=new Date(_diaryCalMonth.getFullYear(),_diaryCalMonth.getMonth()+delta,1);
+  const item=DB.find(d=>d.id===itemId);if(!item)return;
+  const cs=document.getElementById('diary-inner').querySelector('.cal-section');
+  if(cs)cs.innerHTML=_renderDiaryCal(item);
+}
+
 // ═══════════════════════════════ ROUTER ═══════════════════════════════
 function nav(view){
   VIEW=view;SEL=new Set();MULTI=false;
@@ -751,7 +949,7 @@ function openCinema(id){
 
   const castHtml=(item.cast||[]).map(name=>{
     const url=pImg(name)||(item.castImageUrls||{})[name];
-    return`<div style="text-align:center;flex-shrink:0;cursor:pointer;transition:transform 0.2s,opacity 0.2s;" onmouseover="this.style.transform='scale(1.06)';this.style.opacity='0.85'" onmouseout="this.style.transform='scale(1)';this.style.opacity='1'" onclick="closeCinema();openActorView(this.dataset.n)" data-n="${esc(name)}" title="${esc(name)}">
+    return`<div style="text-align:center;flex-shrink:0;cursor:pointer;transition:transform 0.2s,opacity 0.2s;" onmouseenter="showTooltip(event,'person','${esc(name).replace(/'/g,'&#39;')}')" onmouseleave="hideTooltip()" onmouseover="this.style.transform='scale(1.06)';this.style.opacity='0.85'" onmouseout="this.style.transform='scale(1)';this.style.opacity='1'" onclick="closeCinema();openActorView(this.dataset.n)" data-n="${esc(name)}" title="${esc(name)}">
       <img src="${url||fallback}" class="avatar" style="width:56px;height:56px;margin:0 auto 6px;display:block;border:2px solid rgba(246,144,0,0.3);pointer-events:none;" onerror="this.src='${fallback}'">
       <p style="font-size:0.6rem;color:var(--accent);max-width:64px;line-height:1.2;margin:0 auto;pointer-events:none;letter-spacing:0.04em;">${name.split(' ').slice(-1)[0]}</p>
     </div>`;
@@ -783,13 +981,13 @@ function openCinema(id){
       <div style="padding:44px 36px 70px;overflow-y:auto;">
         <!-- GENRE + IMDb BADGES — prominent metadata above title -->
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
-          ${(item.genre||[]).map(g=>`<span style="display:inline-flex;padding:3px 9px;border-radius:2px;font-size:0.6rem;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;background:rgba(255,255,255,0.05);color:var(--text2);border:1px solid rgba(150,165,155,0.18);">${g}</span>`).join('')}
+          ${(item.genre||[]).map(g=>`<span class="genre-link" onmouseenter="showTooltip(event,'genre','${esc(g)}')" onmouseleave="hideTooltip()" onclick="setGenreFilter('${esc(g)}','${item.type}')" style="display:inline-flex;padding:3px 9px;border-radius:2px;font-size:0.6rem;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;background:rgba(255,255,255,0.05);color:var(--text2);border:1px solid rgba(150,165,155,0.18);">${g}</span>`).join('')}
           ${item.imdbRating?`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 11px;border-radius:2px;font-size:0.68rem;font-weight:800;letter-spacing:0.06em;background:rgba(246,144,0,0.14);border:1px solid rgba(246,144,0,0.42);color:var(--accent);">★ IMDb ${item.imdbRating}</span>`:''}
         </div>
         <!-- DOMINANT TITLE -->
         <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:clamp(2.8rem,5.5vw,4.4rem);line-height:0.92;letter-spacing:-0.03em;margin-bottom:13px;text-shadow:0 2px 24px rgba(0,0,0,0.5);">${item.title}</h1>
-        <!-- SECONDARY META — director clickable -->
-        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:28px;letter-spacing:0.03em;">${item.year}${getDirectors(item).length?` · `+getDirectors(item).map(n=>`<span style="color:var(--accent);cursor:pointer;" onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')">${n}</span>`).join(', '):''} · ${fm(totalM)}${item.episodes?` · ${item.episodes} eps`:''}</p>
+        <!-- SECONDARY META — year + director clickable -->
+        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:28px;letter-spacing:0.03em;"><span style="cursor:pointer;border-bottom:1px dashed rgba(83,177,177,0.4);transition:color 0.2s;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color=''" onclick="setDecadeFilter(${item.year},'${item.type}')" title="Browse ${Math.floor((item.year||0)/10)*10}s">${item.year}</span>${getDirectors(item).length?` · `+getDirectors(item).map(n=>`<span style="color:var(--accent);cursor:pointer;" onmouseenter="showTooltip(event,'person','${esc(n).replace(/'/g,'&#39;')}')" onmouseleave="hideTooltip()" onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')">${n}</span>`).join(', '):''} · ${fm(totalM)}${item.episodes?` · ${item.episodes} eps`:''}</p>
         <!-- CLASH + GLASS RATINGS -->
         <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:stretch;margin-bottom:26px;">
           <div class="glass-box" style="background:linear-gradient(135deg,rgba(246,144,0,0.16),rgba(239,68,68,0.09));border:1px solid rgba(246,144,0,0.42);border-radius:var(--r);padding:16px 20px;text-align:center;box-shadow:0 0 30px rgba(246,144,0,0.1),inset 0 1px 0 rgba(255,255,255,0.04);">
@@ -804,6 +1002,28 @@ function openCinema(id){
             <p style="font-size:0.5rem;letter-spacing:0.14em;margin-bottom:9px;color:#F9A8D4;text-transform:uppercase;">JEMIMA · ${item.jemimaStatus}</p>${jStar}
           </div>
         </div>
+        ${item.imdbRating&&a!==null?(()=>{
+          const imdb=parseFloat(item.imdbRating);
+          const delta=sc-imdb;
+          const absDelta=Math.abs(delta);
+          const up=delta>0;
+          return`<div style="margin-bottom:22px;display:grid;grid-template-columns:1fr auto 1fr;gap:0;background:rgba(0,0,0,0.22);border-radius:var(--r);border:1px solid rgba(83,177,177,0.14);overflow:hidden;">
+            <div style="padding:14px 18px;text-align:center;border-right:1px solid rgba(83,177,177,0.1);">
+              <p style="font-size:0.52rem;letter-spacing:0.12em;text-transform:uppercase;color:rgba(246,144,0,0.7);margin-bottom:5px;">IMDb</p>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:2rem;font-weight:700;color:var(--accent);line-height:1;">${imdb.toFixed(1)}</p>
+              <p style="font-size:0.58rem;color:var(--muted);margin-top:3px;">public consensus</p>
+            </div>
+            <div style="padding:14px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;background:${up?'rgba(16,185,129,0.07)':'rgba(239,68,68,0.07)'};">
+              <p style="font-family:'Barlow Condensed',sans-serif;font-size:2.6rem;font-weight:900;color:${up?'#10B981':'#EF4444'};line-height:1;">${up?'↑':'↓'}${absDelta.toFixed(1)}</p>
+              <p style="font-size:0.58rem;color:${up?'#10B981':'#EF4444'};letter-spacing:0.06em;font-weight:700;">${up?'ABOVE':'BELOW'} CONSENSUS</p>
+            </div>
+            <div style="padding:14px 18px;text-align:center;border-left:1px solid rgba(83,177,177,0.1);">
+              <p style="font-size:0.52rem;letter-spacing:0.12em;text-transform:uppercase;color:rgba(246,198,36,0.7);margin-bottom:5px;">CODEX ⊛</p>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:2rem;font-weight:700;color:var(--gold);line-height:1;">${sc.toFixed(2)}</p>
+              <p style="font-size:0.58rem;color:var(--muted);margin-top:3px;">bayesian score</p>
+            </div>
+          </div>`;
+        })():''}
         ${a!==null?`<div style="margin-bottom:26px;"><div class="prog-bar" style="height:4px;margin-bottom:6px;"><div class="prog-fill" style="width:${a*10}%;background:${rc(a)};"></div></div><div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--muted);"><span>Bayesian: <span style="color:var(--accent);font-weight:700;font-family:'JetBrains Mono',monospace;">${sc.toFixed(2)}</span></span><span>Avg: <span style="font-family:'JetBrains Mono',monospace;color:${rc(a)};">${a.toFixed(1)}</span></span></div></div>`:''}
         ${_seriesBreakdownHtml(item,a,sc)}
         ${(item.watchLog||[]).length>0?`<div style="margin-bottom:20px;display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="openDiaryView('${id}')">
@@ -840,6 +1060,33 @@ function openCinema(id){
           <div><span style="color:var(--muted);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;">Added</span><br>${item.dateAdded||'—'}</div>
         </div>
         ${item.ollieStatus!=='Watched'||item.jemimaStatus!=='Watched'?`<button class="btn btn-o" onclick="closeCinema();openPromoteModal('${id}')">✓ MARK AS WATCHED</button>`:''}
+        ${(()=>{
+          const dirs=getDirectors(item).map(n=>n.toLowerCase());
+          const genreSet=new Set(item.genre||[]);
+          const itemDecade=Math.floor((item.year||0)/10)*10;
+          const similar=DB.filter(d=>d.id!==id&&d.type===item.type).map(d=>{
+            let score=0;
+            if(dirs.length&&getDirectors(d).some(dn=>dirs.includes(dn.toLowerCase())))score+=5;
+            score+=(d.genre||[]).filter(g=>genreSet.has(g)).length*2;
+            if(Math.floor((d.year||0)/10)*10===itemDecade)score+=1;
+            return{d,score};
+          }).filter(x=>x.score>=3).sort((a,b)=>b.score-a.score||bay(b.d)-bay(a.d)).slice(0,8).map(x=>x.d);
+          if(!similar.length)return'';
+          return`<div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(83,177,177,0.15);">
+            <p style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">SEE MORE LIKE THIS</p>
+            <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;">
+              ${similar.map(s=>{const br=bestR(s);return`
+                <div class="more-rail-card" onclick="document.getElementById('cinema-inner').scrollTop=0;openCinema('${s.id}')">
+                  <img src="${s.mediaImageUrl||''}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
+                  <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.95) 0%,transparent 55%);"></div>
+                  <div style="position:absolute;bottom:0;left:0;right:0;padding:5px;">
+                    <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.62rem;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.title}</p>
+                    ${br!==null?`<span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:${rc(br)};font-weight:700;">${br.toFixed(1)}</span>`:''}
+                  </div>
+                </div>`}).join('')}
+            </div>
+          </div>`;
+        })()}
       </div>
     </div>`;
   document.getElementById('cinema-view').classList.add('open');
@@ -964,26 +1211,68 @@ function rNexus(){
     <!-- PENDING RATINGS (conditional) -->
     ${pending.length?`
     <div style="margin-bottom:24px;">
-      <div style="margin-bottom:10px;"><span class="sec-title" style="color:var(--danger);">⚠ Pending Ratings</span><span style="font-size:0.65rem;color:var(--muted);margin-left:8px;">${pending.length} item${pending.length!==1?'s':''} awaiting a rating</span></div>
-      <div style="display:flex;flex-direction:column;gap:6px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="sec-title" style="color:var(--danger);">⚠ Pending Ratings</span>
+          <span style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.35);border-radius:2px;padding:1px 7px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;color:var(--danger);">${pending.length}</span>
+          <span style="font-size:0.62rem;color:var(--muted);">watched but unrated</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(${Math.min(pending.length,8)},1fr);gap:6px;">
         ${pending.map(item=>{
           const oPending=item.ollieStatus==='Watched'&&!item.ollieRating;
           const jPending=item.jemimaStatus==='Watched'&&!item.jemimaRating;
-          return`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid rgba(239,68,68,0.25);border-radius:var(--r);padding:9px 12px;cursor:pointer;transition:border-color 0.2s;" onmouseover="this.style.borderColor='rgba(239,68,68,0.5)'" onmouseout="this.style.borderColor='rgba(239,68,68,0.25)'" onclick="openCinema('${item.id}')">
-            <img src="${item.mediaImageUrl||''}" style="width:32px;height:48px;object-fit:cover;border-radius:var(--r);flex-shrink:0;border:1px solid var(--steel);" onerror="this.style.background='var(--steel)'">
-            <div style="flex:1;min-width:0;">
-              <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
-              <p style="font-size:0.65rem;color:var(--muted);">${item.year}</p>
+          return`<div style="position:relative;aspect-ratio:2/3;border-radius:var(--r);overflow:hidden;cursor:pointer;border:2px solid rgba(239,68,68,0.5);box-shadow:0 0 16px rgba(239,68,68,0.18);transition:transform 0.2s,box-shadow 0.2s;" onmouseover="this.style.transform='scale(1.04)';this.style.boxShadow='0 0 28px rgba(239,68,68,0.4)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 0 16px rgba(239,68,68,0.18)'" onclick="openCinema('${item.id}')">
+            <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.98) 0%,rgba(17,34,44,0.3) 55%,transparent 100%);"></div>
+            <div style="position:absolute;top:0;left:0;right:0;padding:6px;display:flex;gap:3px;flex-wrap:wrap;">
+              ${oPending?`<span style="background:rgba(96,165,250,0.85);border-radius:2px;padding:2px 5px;font-size:0.52rem;font-weight:700;color:#fff;letter-spacing:0.06em;">O?</span>`:''}
+              ${jPending?`<span style="background:rgba(244,114,182,0.85);border-radius:2px;padding:2px 5px;font-size:0.52rem;font-weight:700;color:#fff;letter-spacing:0.06em;">J?</span>`:''}
             </div>
-            <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
-              ${oPending?`<span style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:2px;padding:3px 8px;font-size:0.58rem;font-weight:700;color:#93C5FD;letter-spacing:0.06em;">OLLIE ?</span>`:''}
-              ${jPending?`<span style="background:rgba(244,114,182,0.12);border:1px solid rgba(244,114,182,0.3);border-radius:2px;padding:3px 8px;font-size:0.58rem;font-weight:700;color:#F9A8D4;letter-spacing:0.06em;">JEM ?</span>`:''}
-              <button class="btn btn-o btn-xs" onclick="event.stopPropagation();openPromoteModal('${item.id}')">RATE NOW</button>
+            <div style="position:absolute;bottom:0;left:0;right:0;padding:8px;">
+              <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;line-height:1.15;margin-bottom:3px;">${item.title}</p>
+              <p style="font-size:0.6rem;color:var(--text2);margin-bottom:5px;">${item.year}</p>
+              <button class="btn btn-o btn-xs" onclick="event.stopPropagation();openPromoteModal('${item.id}')" style="width:100%;justify-content:center;font-size:0.58rem;padding:4px 6px;">RATE NOW</button>
             </div>
           </div>`;
         }).join('')}
       </div>
     </div>`:''}
+    <!-- BLINDSPOTS -->
+    ${(()=>{
+      const showJem=DB.filter(d=>d.ollieRating>=8&&d.jemimaStatus!=='Watched').sort((a,b)=>b.ollieRating-a.ollieRating).slice(0,10);
+      const showOllie=DB.filter(d=>d.jemimaRating>=8&&d.ollieStatus!=='Watched').sort((a,b)=>b.jemimaRating-a.jemimaRating).slice(0,10);
+      if(!showJem.length&&!showOllie.length)return'';
+      const miniCard=(item,scoreLabel,scoreVal,scoreColor)=>`
+        <div class="blindspot-mini" onclick="openCinema('${item.id}')">
+          <img src="${item.mediaImageUrl||''}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
+          <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.95) 0%,transparent 55%);"></div>
+          <div style="position:absolute;bottom:0;left:0;right:0;padding:5px;">
+            <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.62rem;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:${scoreColor};font-weight:700;">${scoreLabel}${scoreVal}</span>
+          </div>
+        </div>`;
+      return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">
+        ${showJem.length?`<div>
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+            <span class="sec-title" style="color:#F9A8D4;">👁 Show Jemima</span>
+            <span style="font-size:0.62rem;color:var(--muted);">Ollie ★8+ · Jemima hasn't seen</span>
+          </div>
+          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">
+            ${showJem.map(item=>miniCard(item,'O:',item.ollieRating,'#60A5FA')).join('')}
+          </div>
+        </div>`:'<div></div>'}
+        ${showOllie.length?`<div>
+          <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+            <span class="sec-title" style="color:#93C5FD;">👁 Show Ollie</span>
+            <span style="font-size:0.62rem;color:var(--muted);">Jemima ★8+ · Ollie hasn't seen</span>
+          </div>
+          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">
+            ${showOllie.map(item=>miniCard(item,'J:',item.jemimaRating,'#F472B6')).join('')}
+          </div>
+        </div>`:'<div></div>'}
+      </div>`;
+    })()}
     <!-- 01 RECENT -->
     <div style="margin-bottom:24px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -1168,6 +1457,7 @@ function rArchive(){
         ${[['pworks','MOST WORKS'],['pavg','TOP RATED'],['pname','A–Z']].map(([v,l])=>`<button class="stab ${SORT===v?'active':''}" data-sort="${v}" onclick="setSort('${v}')" style="padding:4px 9px;font-size:0.62rem;">${l}</button>`).join('')}
       </div>
     </div>`}
+    <div id="archive-stats" style="margin-bottom:10px;"></div>
     <div id="archive-grid"></div>`;
   rGrid();
 }
@@ -1240,6 +1530,21 @@ function rGrid(){
   const grid=document.getElementById('archive-grid');if(!grid)return;
   if(ATAB==='Director'||ATAB==='Actor'){rPeopleGrid();return;}
   const items=getFiltered();
+  // Update stats bar
+  const statsEl=document.getElementById('archive-stats');
+  if(statsEl){
+    const rated=items.filter(d=>d.ollieRating&&d.jemimaRating);
+    const avgBay=rated.length?(rated.reduce((s,d)=>s+bay(d),0)/rated.length):null;
+    const anyFilter=FILTERS.decade||FILTERS.genre||FILTERS.minR!==''||FILTERS.maxR!==''||FILTERS.controversy||SEARCH||FILTERS.statusF!=='all';
+    statsEl.innerHTML=`<div style="display:flex;align-items:center;gap:12px;background:rgba(83,177,177,0.06);border:1px solid rgba(83,177,177,0.18);border-radius:var(--r);padding:8px 14px;flex-wrap:wrap;">
+      <span style="font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--cyan);font-weight:700;">NOW SHOWING</span>
+      <span style="font-size:0.78rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--text2);">${items.length} <span style="color:var(--muted);font-weight:400;font-size:0.68rem;">${ATAB.toLowerCase()}${items.length!==1?'s':''}</span></span>
+      ${avgBay!==null?`<span style="font-size:0.7rem;color:var(--muted);">·</span>
+      <span style="font-size:0.72rem;color:var(--muted);">avg <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--gold);">⊛${avgBay.toFixed(2)}</span> Bayesian</span>`:''}
+      ${rated.length!==items.length?`<span style="font-size:0.66rem;color:var(--muted);">(${items.length-rated.length} unrated)</span>`:''}
+      ${anyFilter?`<button class="btn btn-g btn-xs" onclick="clearFilters()" style="margin-left:auto;">✕ CLEAR FILTERS</button>`:''}
+    </div>`;
+  }
   if(!items.length){grid.innerHTML=`<div style="text-align:center;padding:60px;color:var(--muted);"><p style="font-size:1.8rem;margin-bottom:8px;">📭</p><p style="font-weight:600;">No entries found.</p><p style="font-size:0.78rem;margin-top:5px;">Try adjusting filters or sort.</p></div>`;return;}
   if(AVIEW==='list'){
     grid.innerHTML=`<div style="display:flex;flex-direction:column;gap:5px;">${items.map(_listRow).join('')}</div>`;
@@ -1416,7 +1721,10 @@ function rWatchlist(){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:9px;">
       <div><h2 style="font-family:'Barlow Condensed',sans-serif;font-size:1.75rem;font-weight:900;letter-spacing:0.04em;">THE WATCHLIST</h2>
       <p style="color:var(--muted);font-size:0.78rem;">${wl.length} item${wl.length!==1?'s':''} in queue.</p></div>
-      <button class="btn btn-o btn-sm" onclick="openAddModal(true)">+ ADD TO QUEUE</button>
+      <div style="display:flex;gap:7px;">
+        <button class="btn btn-g btn-sm" onclick="randomPick()">🎲 RANDOM PICK</button>
+        <button class="btn btn-o btn-sm" onclick="openAddModal(true)">+ ADD TO QUEUE</button>
+      </div>
     </div>
     ${!wl.length?`<div style="text-align:center;padding:70px;color:var(--muted);"><p style="font-size:1.8rem;margin-bottom:9px;">🎬</p><p style="font-weight:600;">Queue is empty.</p></div>`:`
     <div style="display:flex;flex-direction:column;gap:9px;">
@@ -1455,9 +1763,12 @@ function rLab(){
   const vc=document.getElementById('vc');
   const ranked=DB.filter(d=>d.ollieRating&&d.jemimaRating).map(d=>({...d,sc:bay(d),dv:dlt(d),av:avg(d)})).sort((a,b)=>b.sc-a.sc);
   vc.innerHTML=`
-    <div style="margin-bottom:24px;">
-      <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:900;letter-spacing:0.04em;">THE LABORATORY</h2>
-      <p style="color:var(--muted);font-size:0.85rem;margin-top:4px;">Deep analytics and data dissection — ${DB.length} entries, ${ranked.length} mutually rated.</p>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:900;letter-spacing:0.04em;">THE LABORATORY</h2>
+        <p style="color:var(--muted);font-size:0.85rem;margin-top:4px;">Deep analytics and data dissection — ${DB.length} entries, ${ranked.length} mutually rated.</p>
+      </div>
+      <button class="btn btn-g btn-sm" onclick="openPosterWall()" style="flex-shrink:0;">🖼 POSTER WALL</button>
     </div>
 
     <!-- ① TASTE COMPATIBILITY -->
@@ -1466,14 +1777,74 @@ function rLab(){
       <div id="compat-wrap"></div>
     </div>
 
-    <!-- ② DELTA BATTLEGROUND -->
+    <!-- ② HEAD-TO-HEAD TASTE STATS -->
+    <div class="chart-wrap" style="margin-bottom:16px;">
+      ${_labTitle('Head-to-Head Taste Stats','Direct comparison of rating patterns — who rates higher, where divergence concentrates, and genre-level preferences.')}
+      <div id="h2h-wrap"></div>
+    </div>
+
+    <!-- ③ RATING DISTRIBUTION -->
+    <div class="chart-wrap" style="margin-bottom:16px;">
+      ${_labTitle('Rating Distribution','How Ollie and Jemima distribute their ratings across 1–10. Reveals generosity, critical tendency, and rating habits.')}
+      <div id="histogram-wrap"></div>
+    </div>
+
+    <!-- ④ CANONICAL BLIND SPOTS -->
+    <div class="chart-wrap" style="margin-bottom:16px;">
+      ${_labTitle('Canonical Blind Spots','Critically acclaimed films not yet in your Codex. Click any entry to add it to your Watchlist instantly.')}
+      <div id="blindspot-wrap"></div>
+    </div>
+
+    <!-- ⑤ DELTA BATTLEGROUND -->
     <div class="chart-wrap" style="margin-bottom:16px;">
       ${_labTitle('Delta Battleground — Top 10 Rating Gaps','The entries where taste diverged furthest. Blue bars = Ollie · Pink bars = Jemima.')}
       <div style="height:290px;"><canvas id="delta-chart"></canvas></div>
     </div>
 
-    <!-- ③ FULL BAYESIAN RANKING -->
+    <!-- ⑥ RATING DRIFT -->
     <div class="chart-wrap" style="margin-bottom:16px;">
+      ${_labTitle('Rating Drift — Monthly Average','How your average ratings have shifted over time. Spot periods of generosity or critical fatigue.')}
+      <div style="height:240px;"><canvas id="drift-chart"></canvas></div>
+    </div>
+
+    <!-- ⑦ GENRE DIVERSITY -->
+    <div class="chart-wrap" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;">
+        <div>
+          ${_labTitle('Genre Diversity')}
+          <p style="font-size:0.8rem;color:var(--muted);margin-top:-10px;line-height:1.5;">Distribution of your top genres. Filter by media type to avoid mixing film and music genres.</p>
+        </div>
+        <div style="display:flex;gap:5px;flex-shrink:0;margin-top:2px;">
+          ${['Film','Show','Album','all'].map(t=>`<button onclick="GENRE_TYPE='${t}';rGenreChart();" style="padding:4px 11px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;letter-spacing:0.07em;border-radius:2px;cursor:pointer;transition:all 0.2s;border:1px solid ${t===GENRE_TYPE?'var(--cyan)':'var(--steel)'};background:${t===GENRE_TYPE?'rgba(83,177,177,0.18)':'transparent'};color:${t===GENRE_TYPE?'var(--cyan)':'var(--muted)'};" id="gtype-${t}">${t==='all'?'ALL':t.toUpperCase()}</button>`).join('')}
+        </div>
+      </div>
+      <div style="height:280px;display:flex;align-items:center;justify-content:center;"><canvas id="genre-chart"></canvas></div>
+    </div>
+
+    <!-- ⑧ ACTIVITY HEATMAP -->
+    <div class="chart-wrap" style="margin-bottom:16px;">
+      ${_labTitle('Activity Heatmap — Watches per Quarter','Orange intensity reflects relative volume. Uses diary dates where available, otherwise date added.')}
+      <div id="heatmap-wrap"></div>
+    </div>
+
+    <!-- ⑨ TIME DEBT ANALYTICS -->
+    <div class="chart-wrap" style="margin-bottom:16px;">
+      ${_labTitle('Time Debt Analytics','Total viewing time invested. Filter by user and minimum rating to drill into specific slices of your history.')}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div><label class="lbl" style="font-size:0.72rem;margin-bottom:5px;display:block;">USER FILTER</label>
+          <select class="inp" id="ti-user" onchange="updateTI()">
+            <option value="both">Both</option><option value="ollie">Ollie</option><option value="jemima">Jemima</option>
+          </select>
+        </div>
+        <div><label class="lbl" style="font-size:0.72rem;margin-bottom:5px;display:block;">MIN RATING</label>
+          <input class="inp" type="number" id="ti-min" placeholder="e.g. 7" min="0" max="10" step="0.5" oninput="updateTI()">
+        </div>
+      </div>
+      <div id="ti-result">${buildTI('both',null)}</div>
+    </div>
+
+    <!-- ⑩ FULL BAYESIAN RANKING -->
+    <div class="chart-wrap">
       ${_labTitle('Full Bayesian Ranking','All mutually-rated entries sorted by adjusted score. Consensus lifts the score; disagreement penalises it.')}
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:separate;border-spacing:0;">
@@ -1507,58 +1878,80 @@ function rLab(){
           </tbody>
         </table>
       </div>
-    </div>
-
-    <!-- ④ RATING DRIFT -->
-    <div class="chart-wrap" style="margin-bottom:16px;">
-      ${_labTitle('Rating Drift — Monthly Average','How your average ratings have shifted over time. Spot periods of generosity or critical fatigue.')}
-      <div style="height:240px;"><canvas id="drift-chart"></canvas></div>
-    </div>
-
-    <!-- ⑤ GENRE DIVERSITY -->
-    <div class="chart-wrap" style="margin-bottom:16px;">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;">
-        <div>
-          ${_labTitle('Genre Diversity')}
-          <p style="font-size:0.8rem;color:var(--muted);margin-top:-10px;line-height:1.5;">Distribution of your top genres. Filter by media type to avoid mixing film and music genres.</p>
-        </div>
-        <div style="display:flex;gap:5px;flex-shrink:0;margin-top:2px;">
-          ${['Film','Show','Album','all'].map(t=>`<button onclick="GENRE_TYPE='${t}';rGenreChart();" style="padding:4px 11px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;letter-spacing:0.07em;border-radius:2px;cursor:pointer;transition:all 0.2s;border:1px solid ${t===GENRE_TYPE?'var(--cyan)':'var(--steel)'};background:${t===GENRE_TYPE?'rgba(83,177,177,0.18)':'transparent'};color:${t===GENRE_TYPE?'var(--cyan)':'var(--muted)'};" id="gtype-${t}">${t==='all'?'ALL':t.toUpperCase()}</button>`).join('')}
-        </div>
-      </div>
-      <div style="height:280px;display:flex;align-items:center;justify-content:center;"><canvas id="genre-chart"></canvas></div>
-    </div>
-
-    <!-- ⑥ ACTIVITY HEATMAP -->
-    <div class="chart-wrap" style="margin-bottom:16px;">
-      ${_labTitle('Activity Heatmap — Watches per Quarter','Orange intensity reflects relative volume. Uses diary dates where available, otherwise date added.')}
-      <div id="heatmap-wrap"></div>
-    </div>
-
-    <!-- ⑦ TIME DEBT ANALYTICS -->
-    <div class="chart-wrap" style="margin-bottom:16px;">
-      ${_labTitle('Time Debt Analytics','Total viewing time invested. Filter by user and minimum rating to drill into specific slices of your history.')}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-        <div><label class="lbl" style="font-size:0.72rem;margin-bottom:5px;display:block;">USER FILTER</label>
-          <select class="inp" id="ti-user" onchange="updateTI()">
-            <option value="both">Both</option><option value="ollie">Ollie</option><option value="jemima">Jemima</option>
-          </select>
-        </div>
-        <div><label class="lbl" style="font-size:0.72rem;margin-bottom:5px;display:block;">MIN RATING</label>
-          <input class="inp" type="number" id="ti-min" placeholder="e.g. 7" min="0" max="10" step="0.5" oninput="updateTI()">
-        </div>
-      </div>
-      <div id="ti-result">${buildTI('both',null)}</div>
-    </div>
-
-    <!-- ⑧ CANONICAL BLIND SPOTS -->
-    <div class="chart-wrap">
-      ${_labTitle('Canonical Blind Spots','Critically acclaimed films not yet in your Codex. Click any entry to add it to your Watchlist instantly.')}
-      <div id="blindspot-wrap"></div>
     </div>`;
 
-  rDeltaChart();rGenreChart();rDriftChart();rHeatmap();rCompat();rBlindSpots();
+  rDeltaChart();rGenreChart();rDriftChart();rHeatmap();rCompat();rBlindSpots();rHistogram();rHeadToHead();
 }
+
+// ─── Standalone Lab section renderers ──────────────────────────────────────────
+function rHistogram(){
+  const wrap=document.getElementById('histogram-wrap');if(!wrap)return;
+  const oRatings=DB.filter(d=>d.ollieRating).map(d=>Math.round(parseFloat(d.ollieRating)));
+  const jRatings=DB.filter(d=>d.jemimaRating).map(d=>Math.round(parseFloat(d.jemimaRating)));
+  if(!oRatings.length&&!jRatings.length){wrap.innerHTML='<p style="color:var(--muted);font-size:0.8rem;">No ratings yet.</p>';return;}
+  const oCounts=[];const jCounts=[];
+  for(let i=1;i<=10;i++){oCounts.push(oRatings.filter(r=>r===i).length);jCounts.push(jRatings.filter(r=>r===i).length);}
+  const maxC=Math.max(...oCounts,...jCounts,1);
+  const oSum=oRatings.reduce((a,b)=>a+b,0);const jSum=jRatings.reduce((a,b)=>a+b,0);
+  let html='<div style="display:flex;gap:6px;align-items:flex-end;padding:0 2px;margin-bottom:4px;">';
+  for(let i=0;i<10;i++){
+    const oH=Math.round((oCounts[i]/maxC)*100);const jH=Math.round((jCounts[i]/maxC)*100);
+    html+=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <div style="display:flex;gap:1px;align-items:flex-end;height:100px;">
+        <div style="flex:1;background:#60A5FA;height:${oH}px;border-radius:1px 1px 0 0;opacity:0.85;${oCounts[i]?'min-height:3px;':''}" title="Ollie ★${i+1}: ${oCounts[i]}x"></div>
+        <div style="flex:1;background:#F472B6;height:${jH}px;border-radius:1px 1px 0 0;opacity:0.85;${jCounts[i]?'min-height:3px;':''}" title="Jemima ★${i+1}: ${jCounts[i]}x"></div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--muted);">${i+1}</span>
+    </div>`;
+  }
+  html+=`</div>
+  <div style="display:flex;gap:20px;margin-top:10px;font-size:0.72rem;flex-wrap:wrap;">
+    <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#60A5FA;border-radius:1px;display:inline-block;"></span>Ollie — ${oRatings.length} ratings, avg <strong style="color:#60A5FA;">${oRatings.length?(oSum/oRatings.length).toFixed(2):'—'}</strong></span>
+    <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#F472B6;border-radius:1px;display:inline-block;"></span>Jemima — ${jRatings.length} ratings, avg <strong style="color:#F472B6;">${jRatings.length?(jSum/jRatings.length).toFixed(2):'—'}</strong></span>
+  </div>`;
+  wrap.innerHTML=html;
+}
+
+function rHeadToHead(){
+  const wrap=document.getElementById('h2h-wrap');if(!wrap)return;
+  const mutual=DB.filter(d=>d.ollieRating&&d.jemimaRating);
+  if(!mutual.length){wrap.innerHTML='<p style="color:var(--muted);font-size:0.8rem;">No mutually-rated entries yet.</p>';return;}
+  const oAvg=mutual.reduce((s,d)=>s+d.ollieRating,0)/mutual.length;
+  const jAvg=mutual.reduce((s,d)=>s+d.jemimaRating,0)/mutual.length;
+  const avgDiv=mutual.reduce((s,d)=>s+Math.abs(d.ollieRating-d.jemimaRating),0)/mutual.length;
+  const oHigher=mutual.filter(d=>d.ollieRating>d.jemimaRating).length;
+  const jHigher=mutual.filter(d=>d.jemimaRating>d.ollieRating).length;
+  const tied=mutual.length-oHigher-jHigher;
+  const genres=[...new Set(DB.flatMap(d=>d.genre||[]))].filter(Boolean);
+  const genreRows=genres.map(g=>{
+    const gs=mutual.filter(d=>(d.genre||[]).includes(g));if(gs.length<2)return null;
+    const go=gs.reduce((s,d)=>s+d.ollieRating,0)/gs.length;
+    const gj=gs.reduce((s,d)=>s+d.jemimaRating,0)/gs.length;
+    return{g,count:gs.length,go,gj,diff:go-gj};
+  }).filter(Boolean).sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff)).slice(0,8);
+  wrap.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px;">
+      <div class="stat-box" style="padding:12px;text-align:center;"><p style="font-size:0.52rem;letter-spacing:0.1em;color:#93C5FD;margin-bottom:4px;">OLLIE AVG</p><p style="font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:700;color:#60A5FA;line-height:1;">${oAvg.toFixed(2)}</p></div>
+      <div class="stat-box" style="padding:12px;text-align:center;"><p style="font-size:0.52rem;letter-spacing:0.1em;color:#F9A8D4;margin-bottom:4px;">JEM AVG</p><p style="font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:700;color:#F472B6;line-height:1;">${jAvg.toFixed(2)}</p></div>
+      <div class="stat-box" style="padding:12px;text-align:center;"><p style="font-size:0.52rem;letter-spacing:0.1em;color:var(--muted);margin-bottom:4px;">AVG DIVERGENCE</p><p style="font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:700;color:var(--accent);line-height:1;">${avgDiv.toFixed(2)}</p></div>
+      <div class="stat-box" style="padding:12px;text-align:center;"><p style="font-size:0.52rem;letter-spacing:0.1em;color:var(--muted);margin-bottom:4px;">RATES HIGHER</p><p style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:${oAvg>=jAvg?'#60A5FA':'#F472B6'};line-height:1;">${oAvg>=jAvg?'OLLIE':'JEMIMA'}</p><p style="font-size:0.58rem;color:var(--muted);margin-top:2px;">by ${Math.abs(oAvg-jAvg).toFixed(2)} pts</p></div>
+    </div>
+    <div style="display:flex;gap:16px;margin-bottom:18px;">
+      <div style="background:rgba(96,165,250,0.08);border:1px solid rgba(96,165,250,0.2);border-radius:var(--r);padding:10px 16px;flex:1;text-align:center;"><p style="font-size:1.4rem;font-weight:700;color:#60A5FA;font-family:'JetBrains Mono',monospace;">${oHigher}</p><p style="font-size:0.62rem;color:var(--muted);margin-top:2px;">Ollie rated higher</p></div>
+      <div style="background:rgba(83,177,177,0.06);border:1px solid rgba(83,177,177,0.18);border-radius:var(--r);padding:10px 16px;flex:1;text-align:center;"><p style="font-size:1.4rem;font-weight:700;color:var(--cyan);font-family:'JetBrains Mono',monospace;">${tied}</p><p style="font-size:0.62rem;color:var(--muted);margin-top:2px;">Exact agreement</p></div>
+      <div style="background:rgba(244,114,182,0.08);border:1px solid rgba(244,114,182,0.2);border-radius:var(--r);padding:10px 16px;flex:1;text-align:center;"><p style="font-size:1.4rem;font-weight:700;color:#F472B6;font-family:'JetBrains Mono',monospace;">${jHigher}</p><p style="font-size:0.62rem;color:var(--muted);margin-top:2px;">Jemima rated higher</p></div>
+    </div>
+    ${genreRows.length?`<p style="font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">GENRE DIVERGENCE — who rates each genre higher</p>
+    <div style="display:flex;flex-direction:column;gap:5px;">
+      ${genreRows.map(({g,count,go,gj,diff})=>`<div style="display:grid;grid-template-columns:120px 1fr auto auto;gap:8px;align-items:center;font-size:0.76rem;">
+        <span style="color:var(--text2);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g}</span>
+        <div style="background:rgba(0,0,0,0.2);border-radius:1px;height:6px;overflow:hidden;"><div style="height:100%;background:${diff>0?'#60A5FA':'#F472B6'};width:${Math.min(100,Math.abs(diff)/3*100)}%;"></div></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:${diff>0?'#60A5FA':'#F472B6'};font-weight:700;">${diff>0?'O+':'J+'}${Math.abs(diff).toFixed(1)}</span>
+        <span style="font-size:0.6rem;color:var(--muted);">${count}</span>
+      </div>`).join('')}
+    </div>`:''}`;
+}
+
 
 function buildTI(user,minR){
   const items=DB.filter(d=>{
@@ -2292,9 +2685,15 @@ function openPersonModal(name){
 }
 
 function _spotlightHeader(name,viewId,label){
+  const cinemaOpen=document.getElementById('cinema-view').classList.contains('open');
+  const trail=[];
+  trail.push(`<span style="cursor:pointer;color:var(--muted);transition:color 0.2s;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--muted)'" onclick="document.getElementById('${viewId}').classList.remove('open')${cinemaOpen?';':';closeCinema();'}${cinemaOpen?'':''}">${VIEW.toUpperCase()}</span>`);
+  if(cinemaOpen)trail.push(`<span style="cursor:pointer;color:var(--muted);transition:color 0.2s;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color='var(--muted)'" onclick="document.getElementById('${viewId}').classList.remove('open')">CINEMA</span>`);
+  trail.push(`<span style="color:var(--cyan);font-weight:700;">${label.split(' ')[0]}</span>`);
+  const breadcrumb=trail.join(`<span style="color:var(--steel);margin:0 5px;font-size:0.7rem;">›</span>`);
   return`<div style="position:sticky;top:0;z-index:10;background:rgba(17,34,44,0.95);backdrop-filter:blur(16px);border-bottom:1px solid rgba(83,177,177,0.5);padding:9px 22px;display:flex;align-items:center;gap:10px;">
     <button class="btn btn-g btn-sm" onclick="document.getElementById('${viewId}').classList.remove('open')">← BACK</button>
-    <span style="font-size:0.65rem;color:var(--muted);letter-spacing:0.1em;">${label}</span>
+    <span style="font-size:0.62rem;letter-spacing:0.07em;">${breadcrumb}</span>
     <div style="margin-left:auto;display:flex;gap:6px;">
       <button class="btn btn-g btn-sm" onclick="fetchPersonInfo(this.dataset.n)" data-n="${esc(name)}">✨ REFRESH INFO</button>
       <button class="btn btn-g btn-sm" onclick="openEditPersonModal(this.dataset.n)" data-n="${esc(name)}">✎ EDIT</button>
@@ -2454,6 +2853,10 @@ function openDiaryView(id){
     <div style="position:sticky;top:0;z-index:10;background:rgba(17,34,44,0.95);backdrop-filter:blur(16px);border-bottom:1px solid rgba(83,177,177,0.5);padding:9px 22px;display:flex;align-items:center;gap:10px;">
       <button class="btn btn-g btn-sm" onclick="closeDiaryView()">← BACK</button>
       <span style="font-size:0.65rem;color:var(--muted);letter-spacing:0.1em;">WATCH DIARY</span>
+      <div style="display:flex;gap:5px;background:var(--surface);border:1px solid var(--steel);border-radius:var(--r);padding:2px;">
+        <button class="stab ${!_diaryCalMode?'active':''}" onclick="_diaryCalMode=false;_diaryCalMonth=null;openDiaryView('${esc(id)}')" style="padding:3px 9px;font-size:0.62rem;">≡ LIST</button>
+        <button class="stab ${_diaryCalMode?'active':''}" onclick="_diaryCalMode=true;_diaryCalMonth=null;openDiaryView('${esc(id)}')" style="padding:3px 9px;font-size:0.62rem;">⊞ CAL</button>
+      </div>
       <div style="margin-left:auto;">
         <button class="btn btn-o btn-sm" onclick="openAddWatchModal('${esc(id)}')">+ LOG A WATCH</button>
       </div>
@@ -2476,8 +2879,11 @@ function openDiaryView(id){
           </div>
         </div>
       </div>
+      ${_diaryCalMode?`
+      <p style="font-size:0.6rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">CALENDAR VIEW — ${totalWatches} ${totalWatches!==1?'WATCHES':'WATCH'} LOGGED</p>
+      <div class="cal-section">${_renderDiaryCal(item)}</div>`:`
       <p style="font-size:0.6rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">WATCH LOG — ${totalWatches} ${totalWatches!==1?'ENTRIES':'ENTRY'}</p>
-      ${logHtml}
+      ${logHtml}`}
     </div>`;
   document.getElementById('diary-view').classList.add('open');
 }
