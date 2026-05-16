@@ -427,6 +427,7 @@ let DB=[],VIEW='nexus',ATAB='Film',AVIEW='grid',BSGF='',SEARCH='',FILTERS={decad
 // Cloud sync state
 let SYNC_STATUS='idle'; // 'idle' | 'pending' | 'syncing' | 'synced' | 'error'
 let GENRE_TYPE='Film'; // filter for Genre Diversity chart: 'Film'|'Show'|'Album'|'all'
+let _editSeries=[]; // series ratings buffer while edit modal is open
 let _syncTimer=null;
 let _pollTimer=null;
 
@@ -438,14 +439,20 @@ function saveDB(){localStorage.setItem('codex2_db',JSON.stringify(DB));_queueSyn
 let PEOPLE_DB={};
 function loadPeople(){const s=localStorage.getItem('codex2_people');PEOPLE_DB=s?JSON.parse(s):{};}
 function savePeople(){localStorage.setItem('codex2_people',JSON.stringify(PEOPLE_DB));_queueSync();}
-function getPerson(name){return PEOPLE_DB[name]||{};}
-function pImg(name){return(PEOPLE_DB[name]&&PEOPLE_DB[name].imageUrl)||null;}
+function _peopleKey(name){
+  if(!name)return null;
+  if(PEOPLE_DB[name])return name;
+  return Object.keys(PEOPLE_DB).find(k=>k.toLowerCase()===name.toLowerCase())||null;
+}
+function getPerson(name){const k=_peopleKey(name);return k?PEOPLE_DB[k]:{};}
+function pImg(name){const k=_peopleKey(name);return k&&PEOPLE_DB[k].imageUrl?PEOPLE_DB[k].imageUrl:null;}
 function migratePeople(){
   // Pull per-film image URLs into PEOPLE_DB (only if no entry exists yet)
   let c=false;
   DB.forEach(item=>{
-    const d=item.director||item.creator;
-    if(d&&item.directorImageUrl&&!pImg(d)){PEOPLE_DB[d]=PEOPLE_DB[d]||{};PEOPLE_DB[d].imageUrl=item.directorImageUrl;c=true;}
+    getDirectors(item).forEach(d=>{
+      if(item.directorImageUrl&&!pImg(d)){PEOPLE_DB[d]=PEOPLE_DB[d]||{};PEOPLE_DB[d].imageUrl=item.directorImageUrl;c=true;}
+    });
     (item.cast||[]).forEach(n=>{const u=(item.castImageUrls||{})[n];if(u&&!pImg(n)){PEOPLE_DB[n]=PEOPLE_DB[n]||{};PEOPLE_DB[n].imageUrl=u;c=true;}});
   });
   if(c)savePeople();
@@ -661,6 +668,39 @@ function saveGASUrl(){
 /** Stamp a lastModified timestamp on an item before saving (enables conflict resolution). */
 function markDirty(item){item.lastModified=Date.now();return item;}
 
+/** Compute overall ollieRating/jemimaRating for a Show from its seriesRatings mean. */
+function computeShowRatings(item){
+  const sr=item.seriesRatings||[];if(!sr.length)return;
+  const oR=sr.map(s=>s.ollieRating).filter(Boolean);
+  const jR=sr.map(s=>s.jemimaRating).filter(Boolean);
+  item.ollieRating=oR.length?Math.round(oR.reduce((a,b)=>a+b,0)/oR.length*10)/10:item.ollieRating||null;
+  item.jemimaRating=jR.length?Math.round(jR.reduce((a,b)=>a+b,0)/jR.length*10)/10:item.jemimaRating||null;
+}
+
+/** Return array of director/creator names for an item (comma-separated string → array). */
+function getDirectors(item){const d=item.director||item.creator||'';return d?d.split(',').map(s=>s.trim()).filter(Boolean):[];}
+
+/** Capture current series rows from the DOM into an array. */
+function _captureSeriesDOM(){
+  const out=[];
+  for(let i=0;;i++){const lbl=document.getElementById('sr-label-'+i);if(!lbl)break;
+    out.push({label:lbl.value.trim()||'Series '+(i+1),ollieRating:parseFloat(document.getElementById('sr-o-'+i)?.value)||null,jemimaRating:parseFloat(document.getElementById('sr-j-'+i)?.value)||null});}
+  return out;
+}
+function renderSeriesList(){
+  const wrap=document.getElementById('ef-series-list');if(!wrap)return;
+  if(!_editSeries.length){wrap.innerHTML='<p style="font-size:0.75rem;color:var(--muted);padding:6px 0 2px;">No series added yet.</p>';return;}
+  wrap.innerHTML=_editSeries.map((s,i)=>`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;align-items:center;">
+      <input class="inp" id="sr-label-${i}" value="${esc(s.label||('Series '+(i+1)))}" placeholder="e.g. Series 1" style="font-size:0.75rem;padding:5px 8px;">
+      <input class="inp" type="number" id="sr-o-${i}" min="1" max="10" step="0.1" value="${s.ollieRating||''}" placeholder="Ollie" style="font-size:0.75rem;padding:5px 8px;border-color:rgba(96,165,250,0.4);">
+      <input class="inp" type="number" id="sr-j-${i}" min="1" max="10" step="0.1" value="${s.jemimaRating||''}" placeholder="Jemima" style="font-size:0.75rem;padding:5px 8px;border-color:rgba(244,114,182,0.4);">
+      <button type="button" onclick="removeSeries(${i})" style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:var(--danger);border-radius:2px;padding:5px 9px;cursor:pointer;font-size:0.7rem;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;">✕</button>
+    </div>`).join('');
+}
+function addSeries(){_editSeries=_captureSeriesDOM();_editSeries.push({label:'',ollieRating:null,jemimaRating:null});renderSeriesList();setTimeout(()=>document.getElementById('sr-label-'+(_editSeries.length-1))?.focus(),40);}
+function removeSeries(i){_editSeries=_captureSeriesDOM();_editSeries.splice(i,1);renderSeriesList();}
+
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 // ═══════════════════════════════ UTILS ═══════════════════════════════
@@ -749,7 +789,7 @@ function openCinema(id){
         <!-- DOMINANT TITLE -->
         <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:clamp(2.8rem,5.5vw,4.4rem);line-height:0.92;letter-spacing:-0.03em;margin-bottom:13px;text-shadow:0 2px 24px rgba(0,0,0,0.5);">${item.title}</h1>
         <!-- SECONDARY META — director clickable -->
-        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:28px;letter-spacing:0.03em;">${item.year}${item.director||item.creator?` · <span style="color:var(--accent);cursor:pointer;" onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'" onclick="closeCinema();openDirectorView(this.dataset.n)" data-n="${esc(item.director||item.creator)}">${item.director||item.creator}</span>`:''} · ${fm(totalM)}${item.episodes?` · ${item.episodes} eps`:''}</p>
+        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:28px;letter-spacing:0.03em;">${item.year}${getDirectors(item).length?` · `+getDirectors(item).map(n=>`<span style="color:var(--accent);cursor:pointer;" onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')">${n}</span>`).join(', '):''} · ${fm(totalM)}${item.episodes?` · ${item.episodes} eps`:''}</p>
         <!-- CLASH + GLASS RATINGS -->
         <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:stretch;margin-bottom:26px;">
           <div class="glass-box" style="background:linear-gradient(135deg,rgba(246,144,0,0.16),rgba(239,68,68,0.09));border:1px solid rgba(246,144,0,0.42);border-radius:var(--r);padding:16px 20px;text-align:center;box-shadow:0 0 30px rgba(246,144,0,0.1),inset 0 1px 0 rgba(255,255,255,0.04);">
@@ -765,6 +805,7 @@ function openCinema(id){
           </div>
         </div>
         ${a!==null?`<div style="margin-bottom:26px;"><div class="prog-bar" style="height:4px;margin-bottom:6px;"><div class="prog-fill" style="width:${a*10}%;background:${rc(a)};"></div></div><div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--muted);"><span>Bayesian: <span style="color:var(--accent);font-weight:700;font-family:'JetBrains Mono',monospace;">${sc.toFixed(2)}</span></span><span>Avg: <span style="font-family:'JetBrains Mono',monospace;color:${rc(a)};">${a.toFixed(1)}</span></span></div></div>`:''}
+        ${_seriesBreakdownHtml(item,a,sc)}
         ${(item.watchLog||[]).length>0?`<div style="margin-bottom:20px;display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="openDiaryView('${id}')">
           <div style="background:rgba(246,144,0,0.1);border:1px solid rgba(246,144,0,0.28);border-radius:var(--r);padding:7px 14px;display:flex;align-items:center;gap:8px;transition:background 0.2s;" onmouseover="this.style.background='rgba(246,144,0,0.18)'" onmouseout="this.style.background='rgba(246,144,0,0.1)'">
             <span style="font-size:0.95rem;">📖</span>
@@ -787,16 +828,10 @@ function openCinema(id){
           <p style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">CAST — click to open Spotlight</p>
           <div style="display:flex;gap:16px;flex-wrap:wrap;">${castHtml}</div>
         </div>`:''}
-        ${item.director||item.creator?`
+        ${getDirectors(item).length?`
         <div style="margin-bottom:26px;">
           <p style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">${item.type==='Show'?'CREATOR':'DIRECTOR'}</p>
-          <div style="display:flex;align-items:center;gap:12px;cursor:pointer;transition:opacity 0.2s;" onmouseover="this.style.opacity='0.74'" onmouseout="this.style.opacity='1'" onclick="closeCinema();openDirectorView(this.dataset.n)" data-n="${esc(item.director||item.creator)}">
-            <img src="${pImg(item.director||item.creator)||item.directorImageUrl||'https://via.placeholder.com/64x64/364848/F2EDE4?text=?'}" class="avatar" style="width:64px;height:64px;border:2px solid rgba(246,144,0,0.35);pointer-events:none;" onerror="this.src='https://via.placeholder.com/64x64/364848/F2EDE4?text=?'">
-            <div style="pointer-events:none;">
-              <p style="font-weight:700;font-size:1rem;color:var(--accent);">${item.director||item.creator}</p>
-              <p style="font-size:0.62rem;color:var(--muted);margin-top:3px;">${item.type==='Show'?'Creator':'Director'} — open gallery →</p>
-            </div>
-          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">${getDirectors(item).map(n=>`<div style="display:flex;align-items:center;gap:12px;cursor:pointer;transition:opacity 0.2s;" onmouseover="this.style.opacity='0.74'" onmouseout="this.style.opacity='1'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')"><img src="${pImg(n)||item.directorImageUrl||'https://via.placeholder.com/64x64/364848/F2EDE4?text=?'}" class="avatar" style="width:64px;height:64px;border:2px solid rgba(246,144,0,0.35);" onerror="this.src='https://via.placeholder.com/64x64/364848/F2EDE4?text=?'"><div style="pointer-events:none;"><p style="font-weight:700;font-size:1rem;color:var(--accent);">${n}</p><p style="font-size:0.62rem;color:var(--muted);margin-top:3px;">${item.type==='Show'?'Creator':'Director'} — open gallery →</p></div></div>`).join('')}</div>
         </div>`:''}
         <div style="background:rgba(0,0,0,0.18);border-radius:var(--r);padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.75rem;margin-bottom:18px;border:1px solid rgba(255,255,255,0.04);">
           ${item.runtime?`<div><span style="color:var(--muted);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;">Runtime</span><br><span style="font-family:'JetBrains Mono',monospace;">${fm(item.runtime)}</span></div>`:''}
@@ -810,6 +845,39 @@ function openCinema(id){
   document.getElementById('cinema-view').classList.add('open');
 }
 function closeCinema(){document.getElementById('cinema-view').classList.remove('open');}
+
+function _seriesBreakdownHtml(item,a,sc){
+  const sr=item.seriesRatings||[];
+  if(item.type!=='Show'||!sr.length)return'';
+  const hdr=(txt,color='var(--muted)',w='auto')=>`<span style="font-size:0.6rem;letter-spacing:0.08em;color:${color};text-align:center;min-width:${w};">${txt}</span>`;
+  const rows=sr.map(s=>{
+    const sAvg=s.ollieRating&&s.jemimaRating?(s.ollieRating+s.jemimaRating)/2:s.ollieRating||s.jemimaRating||null;
+    const sBay=s.ollieRating&&s.jemimaRating?sAvg-Math.abs(s.ollieRating-s.jemimaRating)*0.15:sAvg;
+    return`<div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:6px;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,0.04);align-items:center;">
+      <span style="font-size:0.82rem;font-weight:600;">${esc(s.label)}</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;text-align:center;min-width:48px;color:${s.ollieRating?rc(s.ollieRating):'var(--muted)'};">${s.ollieRating||'—'}</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;text-align:center;min-width:48px;color:${s.jemimaRating?rc(s.jemimaRating):'var(--muted)'};">${s.jemimaRating||'—'}</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;text-align:center;min-width:44px;color:${sAvg?rc(sAvg):'var(--muted)'};">${sAvg?sAvg.toFixed(1):'—'}</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;text-align:center;min-width:48px;color:var(--gold);">${sBay?sBay.toFixed(2):'—'}</span>
+    </div>`;
+  }).join('');
+  const totRow=`<div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:6px;padding:9px 14px;background:rgba(246,144,0,0.06);border-top:1px solid rgba(246,144,0,0.15);align-items:center;">
+    <span style="font-size:0.68rem;font-weight:700;letter-spacing:0.06em;color:var(--muted);">OVERALL</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;text-align:center;min-width:48px;font-weight:700;color:${item.ollieRating?rc(item.ollieRating):'var(--muted)'};">${item.ollieRating||'—'}</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;text-align:center;min-width:48px;font-weight:700;color:${item.jemimaRating?rc(item.jemimaRating):'var(--muted)'};">${item.jemimaRating||'—'}</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;text-align:center;min-width:44px;color:${a?rc(a):'var(--muted)'};">${a?a.toFixed(1):'—'}</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;font-weight:700;text-align:center;min-width:48px;color:var(--gold);">${sc?sc.toFixed(2):'—'}</span>
+  </div>`;
+  return`<div style="margin-bottom:26px;">
+    <p style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">SERIES BREAKDOWN</p>
+    <div style="background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.06);border-radius:var(--r);overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1fr repeat(4,auto);gap:6px;padding:6px 14px;border-bottom:1px solid rgba(255,255,255,0.08);">
+        ${hdr('SERIES','var(--muted)','auto')}${hdr('OLLIE','#93C5FD','48px')}${hdr('JEMIMA','#F9A8D4','48px')}${hdr('AVG','var(--muted)','44px')}${hdr('SCORE','var(--gold)','48px')}
+      </div>
+      ${rows}${totRow}
+    </div>
+  </div>`;
+}
 
 // ═══════════════════════════════ NEXUS HELPERS ═══════════════════════════════
 function getOnThisDay(){
@@ -1153,7 +1221,7 @@ function _listRow(item){
     <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:34px;height:52px;object-fit:cover;border-radius:var(--r);flex-shrink:0;border:1px solid var(--steel);" onerror="this.style.background='var(--steel)'">
     <div style="flex:1;min-width:0;">
       <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
-      <p style="font-size:0.66rem;color:var(--text2);">${item.year}${item.director||item.creator?` · <span style="color:var(--accent);cursor:pointer;" onclick="event.stopPropagation();openDirectorView(this.dataset.n)" data-n="${esc(item.director||item.creator)}">${item.director||item.creator}</span>`:''}</p>
+      <p style="font-size:0.66rem;color:var(--text2);">${item.year}${getDirectors(item).length?` · `+getDirectors(item).map(n=>`<span style="color:var(--accent);cursor:pointer;" onclick="event.stopPropagation();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')">${n}</span>`).join(', '):''}</p>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;margin-right:4px;">
       <span class="badge ${bc(item.type)}">${item.type}</span>
@@ -1188,7 +1256,7 @@ function rGrid(){
       ${d>2?`<div style="position:absolute;top:7px;right:7px;background:rgba(239,68,68,0.88);border-radius:2px;padding:2px 6px;font-size:0.6rem;font-weight:700;color:#fff;">↕${d.toFixed(1)}</div>`:''}
       <div style="position:absolute;bottom:0;left:0;right:0;padding:11px;">
         <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.1rem;line-height:1.15;margin-bottom:2px;">${item.title}</p>
-        <p style="font-size:0.68rem;color:var(--text2);margin-bottom:4px;">${item.year}${item.director||item.creator?` · <span style="color:var(--accent);cursor:pointer;" onclick="event.stopPropagation();openDirectorView(this.dataset.n)" data-n="${esc(item.director||item.creator)}">${item.director||item.creator}</span>`:''}</p>
+        <p style="font-size:0.68rem;color:var(--text2);margin-bottom:4px;">${item.year}${getDirectors(item).length?` · `+getDirectors(item).map(n=>`<span style="color:var(--accent);cursor:pointer;" onclick="event.stopPropagation();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')">${n}</span>`).join(', '):''}</p>
         ${br!==null?`
           <div style="display:flex;align-items:baseline;gap:6px;">
             <span style="font-family:'JetBrains Mono',monospace;font-size:1.05rem;font-weight:700;color:${who==='both'?'#F6C624':rc(br)};${who==='both'?'text-shadow:0 0 12px rgba(246,198,36,0.55);':''}">${br.toFixed(who==='both'?2:1)}</span>
@@ -1209,19 +1277,18 @@ function getPeopleData(role){
   const map={};
   DB.forEach(item=>{
     const names=role==='Director'
-      ?[(item.director||item.creator||'')].filter(Boolean)
+      ?getDirectors(item)
       :(item.cast||[]);
     names.forEach(name=>{
       if(!name)return;
       if(!map[name])map[name]={name,works:[],asDirector:false,asCreator:false,asCast:false};
       map[name].works.push(item);
       if(role==='Director'){
-        if(item.director===name)map[name].asDirector=true;
-        if(item.creator===name)map[name].asCreator=true;
+        if(item.director&&item.director.split(',').map(s=>s.trim()).includes(name))map[name].asDirector=true;
+        if(item.creator&&item.creator.split(',').map(s=>s.trim()).includes(name))map[name].asCreator=true;
       } else {
         map[name].asCast=true;
-        // Also check if this person is also a director in any entry
-        if(DB.some(d=>(d.director||d.creator)===name))map[name].asDirector=true;
+        if(DB.some(d=>getDirectors(d).includes(name)))map[name].asDirector=true;
       }
     });
   });
@@ -1366,7 +1433,7 @@ function rWatchlist(){
             ${item.jemimaStatus==='Watchlist'?'<span style="font-size:0.58rem;color:#F472B6;">Jemima: queued</span>':''}
           </div>
           <p style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
-          <p style="font-size:0.7rem;color:var(--muted);">${item.year} · ${item.director||item.creator||'—'} · ${fm(item.runtime)}${item.imdbRating?` · IMDb ${item.imdbRating}`:''}</p>
+          <p style="font-size:0.7rem;color:var(--muted);">${item.year} · ${getDirectors(item).join(', ')||'—'} · ${fm(item.runtime)}${item.imdbRating?` · IMDb ${item.imdbRating}`:''}</p>
         </div>
         <div style="display:flex;align-items:center;gap:5px;padding:10px;flex-shrink:0;">
           <button class="btn btn-o btn-sm" onclick="openPromoteModal('${item.id}')">✓ WATCHED</button>
@@ -1836,10 +1903,11 @@ function buildCompatibility(){
   // Director alignment
   const dirs={};
   mutual.forEach(item=>{
-    const d=item.director||item.creator;if(!d)return;
-    if(!dirs[d])dirs[d]={diffs:[],count:0};
-    dirs[d].diffs.push(Math.abs(item.ollieRating-item.jemimaRating));
-    dirs[d].count++;
+    getDirectors(item).forEach(d=>{
+      if(!dirs[d])dirs[d]={diffs:[],count:0};
+      dirs[d].diffs.push(Math.abs(item.ollieRating-item.jemimaRating));
+      dirs[d].count++;
+    });
   });
   const dirScores=Object.entries(dirs)
     .filter(([,v])=>v.count>=2)
@@ -1971,6 +2039,8 @@ function rSettings(){
     </div>
     <div class="settings-block">
       <p style="font-size:0.6rem;letter-spacing:0.1em;color:var(--danger);margin-bottom:8px;">DANGER ZONE</p>
+      <p style="font-size:0.78rem;color:var(--text2);margin-bottom:10px;">Strip placeholder dates from all entries dated in May 2026 (import artefacts). No-data is shown in charts rather than false data. Cannot be undone.</p>
+      <button class="btn btn-d" onclick="stripImportDates()" style="margin-bottom:10px;">✕ STRIP MAY 2026 DATES</button>
       <p style="font-size:0.78rem;color:var(--text2);margin-bottom:10px;">Reset to 5 seed entries. Cannot be undone.</p>
       <button class="btn btn-d" onclick="resetDB()">RESET TO DEFAULT DATA</button>
     </div>
@@ -1983,6 +2053,15 @@ function rSettings(){
 function exportDB(){const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='codex_backup.json';a.click();URL.revokeObjectURL(url);toast('Database exported');}
 function importDB(e){const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>{try{const data=JSON.parse(ev.target.result);if(!Array.isArray(data))throw new Error();if(!confirm(`Import ${data.length} entries?`))return;DB=data;saveDB();toast(`${data.length} entries imported`);nav('nexus');}catch{alert('Invalid backup file.');}};r.readAsText(file);}
 function resetDB(){if(!confirm('Reset all data?'))return;DB=JSON.parse(JSON.stringify(SEED));saveDB();toast('Database reset');nav('nexus');}
+function stripImportDates(){
+  if(!confirm('Remove all dates from entries dated in May 2026?\n\nThis affects dateAdded and any watch log entries with that date. Cannot be undone.'))return;
+  let count=0;
+  DB.forEach(item=>{
+    if(item.dateAdded&&item.dateAdded.startsWith('2026-05')){item.dateAdded=null;count++;}
+    (item.watchLog||[]).forEach(e=>{if(e.date&&e.date.startsWith('2026-05'))e.date=null;});
+  });
+  saveDB();toast(`Cleared dates from ${count} entr${count===1?'y':'ies'}`,'✕');rSettings();
+}
 
 // ═══════════════════════════════ PROMOTE MODAL ═══════════════════════════════
 function openPromoteModal(id){
@@ -2029,9 +2108,9 @@ function openEditModal(id,wl=false){
     <h3 style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.5rem;margin-bottom:16px;">${isNew?'ADD ENTRY':'EDIT ENTRY'}</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px;">
       <div style="grid-column:1/-1;"><label class="lbl">TITLE *</label><div style="display:flex;gap:6px;"><input class="inp" id="ef-title" value="${item?.title||''}" placeholder="Title" style="flex:1;"><button type="button" class="btn btn-g btn-sm" onclick="fetchMediaDetails()" style="white-space:nowrap;flex-shrink:0;">✦ MAGIC FETCH</button></div></div>
-      <div><label class="lbl">TYPE</label><select class="inp" id="ef-type">${['Film','Show','Album'].map(t=>`<option value="${t}" ${(item?.type||'Film')===t?'selected':''}>${t}</option>`).join('')}</select></div>
+      <div><label class="lbl">TYPE</label><select class="inp" id="ef-type" onchange="toggleEfR()">${['Film','Show','Album'].map(t=>`<option value="${t}" ${(item?.type||'Film')===t?'selected':''}>${t}</option>`).join('')}</select></div>
       <div><label class="lbl">YEAR</label><input class="inp" id="ef-year" type="number" value="${item?.year||new Date().getFullYear()}"></div>
-      <div><label class="lbl">DIRECTOR / CREATOR</label><input class="inp" id="ef-dir" value="${item?.director||item?.creator||''}" placeholder="Name"></div>
+      <div><label class="lbl">DIRECTOR / CREATOR</label><input class="inp" id="ef-dir" value="${item?.director||item?.creator||''}" placeholder="Name, Name" list="dir-datalist" autocomplete="off"><datalist id="dir-datalist">${[...new Set(DB.flatMap(d=>getDirectors(d)))].sort().map(n=>`<option value="${esc(n)}">`).join('')}</datalist></div>
       <div><label class="lbl">RUNTIME (mins)</label><input class="inp" id="ef-runtime" type="number" value="${item?.runtime||''}"></div>
       <div><label class="lbl">EPISODES (shows)</label><input class="inp" id="ef-eps" type="number" value="${item?.episodes||''}"></div>
       <div><label class="lbl">IMDb RATING</label><input class="inp" id="ef-imdb" type="number" step="0.1" value="${item?.imdbRating||''}"></div>
@@ -2053,18 +2132,38 @@ function openEditModal(id,wl=false){
       <div style="margin-bottom:9px;"><label class="lbl" style="color:#60A5FA;">OLLIE'S REVIEW</label><textarea class="inp" id="ef-orev" rows="2">${item?.ollieReview||''}</textarea></div>
       <div style="margin-bottom:9px;"><label class="lbl" style="color:#F472B6;">JEMIMA'S REVIEW</label><textarea class="inp" id="ef-jrev" rows="2">${item?.jemimaReview||''}</textarea></div>
     </div>
+    <div id="ef-series-f" style="display:none;margin-bottom:9px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <label class="lbl" style="margin:0;color:var(--cyan);">SERIES RATINGS</label>
+        <button type="button" class="btn btn-g btn-sm" onclick="addSeries()">+ ADD SERIES</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;margin-bottom:4px;">
+        <span style="font-size:0.6rem;letter-spacing:0.08em;color:var(--muted);padding-left:2px;">LABEL</span>
+        <span style="font-size:0.6rem;letter-spacing:0.08em;color:#93C5FD;">OLLIE</span>
+        <span style="font-size:0.6rem;letter-spacing:0.08em;color:#F9A8D4;">JEMIMA</span>
+        <span></span>
+      </div>
+      <div id="ef-series-list"></div>
+      <p style="font-size:0.65rem;color:var(--muted);margin-top:8px;line-height:1.5;">Overall rating is computed as the mean across all rated series. If no series are added, the manual rating above is used.</p>
+    </div>
     <div id="ef-pri-f" style="display:none;margin-bottom:9px;"><label class="lbl">PRIORITY (1=High)</label><select class="inp" id="ef-pri">${[1,2,3,4,5].map(n=>`<option value="${n}" ${(item?.priority||3)===n?'selected':''}>${n}</option>`).join('')}</select></div>
     <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:14px;">
       <button class="btn btn-g" onclick="closeModal()">CANCEL</button>
       <button class="btn btn-o" onclick="saveEntry('${id||''}')">✓ ${isNew?'ADD':'SAVE'}</button>
     </div>`);
+  _editSeries=JSON.parse(JSON.stringify(item?.seriesRatings||[]));
   toggleEfR();
+  renderSeriesList();
 }
 function toggleEfR(){
   const os=document.getElementById('ef-os')?.value,js=document.getElementById('ef-js')?.value;if(!os||!js)return;
+  const type=document.getElementById('ef-type')?.value||'Film';
   const noRatings=(os==='Watchlist'||os==='Unwatched')&&(js==='Watchlist'||js==='Unwatched');
-  const rf=document.getElementById('ef-ratings'),pf=document.getElementById('ef-pri-f');
-  if(rf)rf.style.display=noRatings?'none':'';if(pf)pf.style.display=noRatings?'':'none';
+  const isShow=type==='Show';
+  const rf=document.getElementById('ef-ratings'),sf=document.getElementById('ef-series-f'),pf=document.getElementById('ef-pri-f');
+  if(rf)rf.style.display=noRatings?'none':'';
+  if(sf)sf.style.display=noRatings||!isShow?'none':'';
+  if(pf)pf.style.display=noRatings?'':'none';
 }
 function saveEntry(id){
   const title=document.getElementById('ef-title').value.trim();if(!title){alert('Title required.');return;}
@@ -2072,6 +2171,8 @@ function saveEntry(id){
   const os=document.getElementById('ef-os').value,js=document.getElementById('ef-js').value;
   const bwl=(os==='Watchlist'||os==='Unwatched')&&(js==='Watchlist'||js==='Unwatched');
   let cImgs={};try{const v=document.getElementById('ef-cimgs').value.trim();if(v)cImgs=JSON.parse(v);}catch(e){}
+  // Capture series ratings for Shows
+  const seriesRatings=type==='Show'?_captureSeriesDOM().filter(s=>s.ollieRating||s.jemimaRating):null;
   const entry={
     id:id||gid(),type,title,year:parseInt(document.getElementById('ef-year').value)||null,
     genre:document.getElementById('ef-genre').value.split(',').map(g=>g.trim()).filter(Boolean),
@@ -2088,13 +2189,17 @@ function saveEntry(id){
     jemimaReview:!bwl?(document.getElementById('ef-jrev')?.value||null):null,
     imdbId:null,imdbRating:parseFloat(document.getElementById('ef-imdb').value)||null,
     dateAdded:id?(DB.find(d=>d.id===id)?.dateAdded||new Date().toISOString().split('T')[0]):new Date().toISOString().split('T')[0],
-    priority:bwl?(parseInt(document.getElementById('ef-pri')?.value)||3):null
+    priority:bwl?(parseInt(document.getElementById('ef-pri')?.value)||3):null,
+    seriesRatings:seriesRatings&&seriesRatings.length?seriesRatings:null
   };
+  // Override overall ratings with series mean when series data is present
+  if(seriesRatings&&seriesRatings.length)computeShowRatings(entry);
   markDirty(entry);
   if(id){const idx=DB.findIndex(d=>d.id===id);if(idx!==-1)DB[idx]=entry;}else DB.push(entry);
   // Sync any image URLs entered here into PEOPLE_DB so they propagate across all films
-  const pName=entry.director||entry.creator;
-  if(pName&&entry.directorImageUrl){PEOPLE_DB[pName]=PEOPLE_DB[pName]||{};PEOPLE_DB[pName].imageUrl=entry.directorImageUrl;}
+  getDirectors(entry).forEach(pName=>{
+    if(entry.directorImageUrl){PEOPLE_DB[pName]=PEOPLE_DB[pName]||{};PEOPLE_DB[pName].imageUrl=entry.directorImageUrl;}
+  });
   Object.entries(entry.castImageUrls||{}).forEach(([n,u])=>{if(u){PEOPLE_DB[n]=PEOPLE_DB[n]||{};PEOPLE_DB[n].imageUrl=u;}});
   savePeople();
   saveDB();closeModal();toast(`"${title}" ${id?'updated':'added'}`);nav(VIEW);
@@ -2111,8 +2216,8 @@ function openPersonModal(name){
   const fb='https://via.placeholder.com/80x80/334155/94A3B8?text=?';
   const imgUrl=pImg(name)||fb;
 
-  const asDir=DB.filter(d=>(d.director||d.creator)===name);
-  const asCast=DB.filter(d=>(d.cast||[]).includes(name)&&(d.director||d.creator)!==name);
+  const asDir=DB.filter(d=>getDirectors(d).includes(name));
+  const asCast=DB.filter(d=>(d.cast||[]).includes(name)&&!getDirectors(d).includes(name));
   const allFilms=[...asDir,...asCast].sort((a,b)=>(avg(b)||0)-(avg(a)||0));
 
   const oRated=allFilms.filter(f=>f.ollieRating);
@@ -2214,8 +2319,9 @@ function openDirectorView(name){
   const person=getPerson(name);
   const fb='https://via.placeholder.com/300x450/222E2E/7A9898?text=?';
   const portrait=pImg(name)||fb;
-  const asDir=DB.filter(d=>(d.director||d.creator)===name);
-  const asCast=DB.filter(d=>(d.cast||[]).includes(name)&&(d.director||d.creator)!==name);
+  const nameLower=name.toLowerCase();
+  const asDir=DB.filter(d=>getDirectors(d).some(dn=>dn.toLowerCase()===nameLower));
+  const asCast=DB.filter(d=>(d.cast||[]).some(c=>c.toLowerCase()===nameLower)&&!getDirectors(d).some(dn=>dn.toLowerCase()===nameLower));
   const works=[...asDir,...asCast].sort((a,b)=>bay(b)-bay(a));
   // Include solo-rated works — bay() returns the solo score for those
   const ratable=works.filter(w=>w.ollieRating||w.jemimaRating);
@@ -2357,7 +2463,7 @@ function openDiaryView(id){
         <img src="${item.mediaImageUrl||''}" style="width:56px;height:84px;object-fit:cover;border-radius:var(--r);border:1px solid var(--steel);flex-shrink:0;" onerror="this.style.background='var(--steel)'">
         <div>
           <h2 style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.9rem;line-height:0.94;margin-bottom:4px;">${item.title}</h2>
-          <p style="font-size:0.72rem;color:var(--muted);margin-bottom:12px;">${item.year}${item.director||item.creator?` · ${item.director||item.creator}`:''}</p>
+          <p style="font-size:0.72rem;color:var(--muted);margin-bottom:12px;">${item.year}${getDirectors(item).length?` · `+getDirectors(item).join(', '):''}</p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <div style="background:rgba(246,144,0,0.12);border:1px solid rgba(246,144,0,0.28);border-radius:var(--r);padding:6px 14px;text-align:center;">
               <p style="font-family:'JetBrains Mono',monospace;font-size:1.3rem;font-weight:700;color:var(--accent);line-height:1;">${totalWatches}</p>
@@ -2638,7 +2744,7 @@ async function fetchPersonInfo(name){
     if(detail.biography&&detail.biography.length>20)PEOPLE_DB[name].bio=detail.biography.slice(0,500);
     savePeople();
     toast(`Profile refreshed — ${name}`,'✓');
-    const isDir=DB.some(d=>(d.director||d.creator)===name);
+    const isDir=DB.some(d=>getDirectors(d).includes(name));
     if(isDir)openDirectorView(name);else openActorView(name);
   }catch(err){toast('TMDb fetch failed','✕');console.error(err);}
 }
@@ -2719,7 +2825,7 @@ function openEditPersonModal(name){
   const person=getPerson(name);
   const fb='https://via.placeholder.com/80x80/334155/94A3B8?text=?';
   const curImg=pImg(name)||'';
-  const isDir=DB.some(d=>(d.director||d.creator)===name);
+  const isDir=DB.some(d=>getDirectors(d).includes(name));
   const backAction=`closeModal()`;// underlying spotlight view remains visible behind modal
   openModal(`
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
