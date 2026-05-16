@@ -666,7 +666,7 @@ const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'
 // ═══════════════════════════════ UTILS ═══════════════════════════════
 const normTitle=t=>(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9\s]/g,'').replace(/^(the|a|an)\s+/,'').replace(/\s+/g,' ').trim();
 // Co-watched: apply penalty formula. Solo-watched: solo rating is the score. Unrated: 0.
-const bay=i=>{const o=i.ollieRating,j=i.jemimaRating;if(o&&j)return(o+j)/2-Math.abs(o-j)*0.25;return o||j||0;};
+const bay=i=>{const o=i.ollieRating,j=i.jemimaRating;if(o&&j)return(o+j)/2-Math.abs(o-j)*0.15;return o||j||0;};
 const dlt=i=>(!i.ollieRating||!i.jemimaRating)?0:Math.abs(i.ollieRating-i.jemimaRating);
 const avg=i=>(!i.ollieRating||!i.jemimaRating)?null:(i.ollieRating+i.jemimaRating)/2;
 const rc=r=>r>=8?'#10B981':r>=6?'#F6C624':r>=4?'#F69000':'#EF4444';
@@ -975,7 +975,7 @@ function rNexus(){
               <span style="font-family:'JetBrains Mono',monospace;font-size:0.88rem;font-weight:700;color:var(--accent);flex-shrink:0;">${item.sc.toFixed(2)}</span>
             </div>
           `).join('')}
-          <p style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--muted);margin-top:9px;padding-top:9px;border-top:1px solid var(--steel);">(O+J)/2 − |O−J|×0.25</p>
+          <p style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--muted);margin-top:9px;padding-top:9px;border-top:1px solid var(--steel);">(O+J)/2 − |O−J|×0.15</p>
         </div>
         <!-- BATTLEGROUND -->
         <div style="background:var(--surface);border:1px solid var(--steel);border-radius:var(--r);padding:18px;">
@@ -2314,7 +2314,7 @@ function openDiaryView(id){
     const daysAgo=Math.round((Date.now()-dateObj)/864e5);
     const tl=daysAgo===0?'Today':daysAgo===1?'Yesterday':daysAgo<7?`${daysAgo}d ago`:daysAgo<30?`${Math.floor(daysAgo/7)}w ago`:daysAgo<365?`${Math.floor(daysAgo/30)}mo ago`:`${Math.floor(daysAgo/365)}yr ago`;
     const bothR=entry.ollieRating&&entry.jemimaRating;
-    const entryBay=bothR?((entry.ollieRating+entry.jemimaRating)/2-Math.abs(entry.ollieRating-entry.jemimaRating)*0.25):null;
+    const entryBay=bothR?((entry.ollieRating+entry.jemimaRating)/2-Math.abs(entry.ollieRating-entry.jemimaRating)*0.15):null;
     return`<div style="background:var(--surface);border:1px solid var(--steel);border-radius:var(--r);padding:18px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
