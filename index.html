@@ -89,8 +89,9 @@ textarea.inp{resize:vertical;min-height:64px;}
 .poster-card{position:relative;border-radius:var(--r);overflow:hidden;cursor:pointer;border:1px solid rgba(83,177,177,0.22);transition:transform 0.3s ease-in-out,box-shadow 0.3s ease-in-out;aspect-ratio:2/3;}
 .poster-card:hover{transform:scale(1.03);box-shadow:0 0 30px rgba(246,144,0,0.4),0 0 2px rgba(83,177,177,0.6);}
 .poster-card.selected{border:2px solid var(--accent);}
-.wl-card{flex-shrink:0;width:136px;border-radius:var(--r);overflow:hidden;cursor:pointer;border:1px solid rgba(83,177,177,0.22);transition:transform 0.3s ease-in-out,box-shadow 0.3s ease-in-out;aspect-ratio:2/3;position:relative;}
+.wl-card{flex-shrink:0;width:160px;border-radius:var(--r);overflow:hidden;cursor:pointer;border:1px solid rgba(83,177,177,0.22);transition:transform 0.3s ease-in-out,box-shadow 0.3s ease-in-out;aspect-ratio:2/3;position:relative;}
 .wl-card:hover{transform:scale(1.04);box-shadow:0 0 28px rgba(246,144,0,0.35);}
+.h-scroll{-webkit-overflow-scrolling:touch;}
 .review-box{background:rgba(17,34,44,0.6);border:1px solid rgba(83,177,177,0.22);border-radius:var(--r);padding:14px;backdrop-filter:blur(8px);}
 .settings-block{background:var(--surface);border:1px solid rgba(83,177,177,0.22);border-radius:var(--r);padding:18px;margin-bottom:10px;}
 .chart-wrap{background:var(--surface);border:1px solid rgba(83,177,177,0.22);border-radius:var(--r);padding:18px;}
@@ -107,9 +108,9 @@ textarea.inp{resize:vertical;min-height:64px;}
 .cal-cell.has-watch{border-color:rgba(246,144,0,0.3);background:rgba(246,144,0,0.05);color:var(--text2);cursor:pointer;}
 .cal-cell.has-watch:hover{border-color:rgba(246,144,0,0.6);background:rgba(246,144,0,0.1);}
 .cal-cell.today{border-color:rgba(83,177,177,0.5);}
-.blindspot-mini{flex-shrink:0;width:88px;cursor:pointer;border-radius:var(--r);overflow:hidden;border:1px solid rgba(83,177,177,0.22);transition:transform 0.2s,box-shadow 0.2s;position:relative;aspect-ratio:2/3;}
+.blindspot-mini{flex-shrink:0;width:145px;cursor:pointer;border-radius:var(--r);overflow:hidden;border:1px solid rgba(83,177,177,0.22);transition:transform 0.2s,box-shadow 0.2s;position:relative;aspect-ratio:2/3;}
 .blindspot-mini:hover{transform:scale(1.04);box-shadow:0 0 20px rgba(246,144,0,0.3);}
-.more-rail-card{flex-shrink:0;width:100px;cursor:pointer;border-radius:var(--r);overflow:hidden;border:1px solid rgba(83,177,177,0.22);transition:transform 0.2s,box-shadow 0.2s;position:relative;aspect-ratio:2/3;}
+.more-rail-card{flex-shrink:0;width:155px;cursor:pointer;border-radius:var(--r);overflow:hidden;border:1px solid rgba(83,177,177,0.22);transition:transform 0.2s,box-shadow 0.2s;position:relative;aspect-ratio:2/3;}
 .more-rail-card:hover{transform:scale(1.05);box-shadow:0 0 22px rgba(246,144,0,0.35);}
 .hist-bar-wrap{display:flex;align-items:flex-end;gap:1px;height:80px;}
 .hist-bar{border-radius:1px 1px 0 0;transition:opacity 0.2s;min-width:12px;}
@@ -452,6 +453,7 @@ let _syncTimer=null;
 let _pollTimer=null;
 let NAV_TRAIL=[];
 let _diaryCalMode=false;
+let _wlView='list';
 let _diaryCalMonth=null;
 
 // ── Local-first persistence: sync to localStorage immediately, queue cloud push ──
@@ -824,20 +826,21 @@ function randomPick(){
 }
 
 // ─── Poster Wall Export ─────────────────────────────────────────────────────────
-let _pwFilters={type:'all',minScore:0,count:40};
+let _pwFilters={type:'all',minScore:0,count:40,sortBy:'bayesian'};
 function openPosterWall(f){
   if(f)Object.assign(_pwFilters,f);
   let pool=DB.filter(d=>d.ollieRating&&d.jemimaRating);
   if(_pwFilters.type!=='all')pool=pool.filter(d=>d.type===_pwFilters.type);
   if(_pwFilters.minScore>0)pool=pool.filter(d=>bay(d)>=_pwFilters.minScore);
-  const top=pool.sort((a,b)=>bay(b)-bay(a)).slice(0,_pwFilters.count);
+  const sorter=_pwFilters.sortBy==='ollie'?(a,b)=>(b.ollieRating||0)-(a.ollieRating||0):_pwFilters.sortBy==='jemima'?(a,b)=>(b.jemimaRating||0)-(a.jemimaRating||0):(a,b)=>bay(b)-bay(a);
+  const top=pool.sort(sorter).slice(0,_pwFilters.count);
   const cols=_pwFilters.count<=20?5:_pwFilters.count<=30?6:_pwFilters.count<=40?8:10;
   const el=document.getElementById('posterwall-view');
   el.innerHTML=`<div style="max-width:${cols*120+80}px;margin:0 auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
       <div>
         <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:2.2rem;font-weight:900;color:var(--accent);letter-spacing:0.07em;text-shadow:0 0 30px rgba(246,144,0,0.4);">CODEX — TOP RATED</h2>
-        <p style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Showing ${top.length} entries by Bayesian Common Ground · Ollie & Jemima · ${new Date().toLocaleDateString('en-GB',{year:'numeric',month:'long'})}</p>
+        <p style="font-size:0.68rem;color:var(--muted);margin-top:2px;">Showing ${top.length} entries · sorted by ${_pwFilters.sortBy==='ollie'?"Ollie's rating":_pwFilters.sortBy==='jemima'?"Jemima's rating":'Bayesian Common Ground'} · ${new Date().toLocaleDateString('en-GB',{year:'numeric',month:'long'})}</p>
       </div>
       <div style="display:flex;gap:7px;flex-wrap:wrap;">
         <button class="btn btn-g btn-sm" onclick="window.print()" style="@media print{display:none}">🖨 PRINT</button>
@@ -856,6 +859,9 @@ function openPosterWall(f){
       <span style="color:var(--steel);font-size:0.7rem;">|</span>
       <span style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);">TOP</span>
       ${[20,30,40,60].map(n=>`<button onclick="openPosterWall({count:${n}})" style="padding:4px 9px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;border-radius:2px;cursor:pointer;border:1px solid ${_pwFilters.count===n?'var(--accent)':'var(--steel)'};background:${_pwFilters.count===n?'rgba(246,144,0,0.15)':'transparent'};color:${_pwFilters.count===n?'var(--accent)':'var(--muted)'};">${n}</button>`).join('')}
+      <span style="color:var(--steel);font-size:0.7rem;">|</span>
+      <span style="font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);">SORT</span>
+      ${[['bayesian','⊛ BOTH'],['ollie','OLLIE'],['jemima','JEMIMA']].map(([v,label])=>`<button onclick="openPosterWall({sortBy:'${v}'})" style="padding:4px 9px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;border-radius:2px;cursor:pointer;border:1px solid ${_pwFilters.sortBy===v?'var(--bay)':'var(--steel)'};background:${_pwFilters.sortBy===v?'rgba(246,198,36,0.15)':'transparent'};color:${_pwFilters.sortBy===v?'var(--bay)':'var(--muted)'};">${label}</button>`).join('')}
     </div>
     <!-- GRID -->
     ${top.length?`<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:5px;">
@@ -950,8 +956,8 @@ function openCinema(id){
   const castHtml=(item.cast||[]).map(name=>{
     const url=pImg(name)||(item.castImageUrls||{})[name];
     return`<div style="text-align:center;flex-shrink:0;cursor:pointer;transition:transform 0.2s,opacity 0.2s;" onmouseenter="showTooltip(event,'person','${esc(name).replace(/'/g,'&#39;')}')" onmouseleave="hideTooltip()" onmouseover="this.style.transform='scale(1.06)';this.style.opacity='0.85'" onmouseout="this.style.transform='scale(1)';this.style.opacity='1'" onclick="closeCinema();openActorView(this.dataset.n)" data-n="${esc(name)}" title="${esc(name)}">
-      <img src="${url||fallback}" class="avatar" style="width:56px;height:56px;margin:0 auto 6px;display:block;border:2px solid rgba(246,144,0,0.3);pointer-events:none;" onerror="this.src='${fallback}'">
-      <p style="font-size:0.6rem;color:var(--accent);max-width:64px;line-height:1.2;margin:0 auto;pointer-events:none;letter-spacing:0.04em;">${name.split(' ').slice(-1)[0]}</p>
+      <img src="${url||fallback}" class="avatar" style="width:88px;height:88px;margin:0 auto 8px;display:block;border:2px solid rgba(246,144,0,0.3);pointer-events:none;" onerror="this.src='${fallback}'">
+      <p style="font-size:0.75rem;color:var(--accent);max-width:92px;line-height:1.2;margin:0 auto;pointer-events:none;letter-spacing:0.04em;">${name.split(' ').slice(-1)[0]}</p>
     </div>`;
   }).join('');
 
@@ -981,46 +987,49 @@ function openCinema(id){
       <div style="padding:44px 36px 70px;overflow-y:auto;">
         <!-- GENRE + IMDb BADGES — prominent metadata above title -->
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
-          ${(item.genre||[]).map(g=>`<span class="genre-link" onmouseenter="showTooltip(event,'genre','${esc(g)}')" onmouseleave="hideTooltip()" onclick="setGenreFilter('${esc(g)}','${item.type}')" style="display:inline-flex;padding:3px 9px;border-radius:2px;font-size:0.6rem;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;background:rgba(255,255,255,0.05);color:var(--text2);border:1px solid rgba(150,165,155,0.18);">${g}</span>`).join('')}
-          ${item.imdbRating?`<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 11px;border-radius:2px;font-size:0.68rem;font-weight:800;letter-spacing:0.06em;background:rgba(246,144,0,0.14);border:1px solid rgba(246,144,0,0.42);color:var(--accent);">★ IMDb ${item.imdbRating}</span>`:''}
+          ${(item.genre||[]).map(g=>`<span class="genre-link" onmouseenter="showTooltip(event,'genre','${esc(g)}')" onmouseleave="hideTooltip()" onclick="setGenreFilter('${esc(g)}','${item.type}')" style="display:inline-flex;padding:4px 12px;border-radius:2px;font-size:0.72rem;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;background:rgba(255,255,255,0.05);color:var(--text2);border:1px solid rgba(150,165,155,0.18);">${g}</span>`).join('')}
+          ${item.imdbRating?`<a href="${item.imdbId?`https://www.imdb.com/title/${item.imdbId}`:'https://www.imdb.com'}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:2px;font-size:0.75rem;font-weight:700;letter-spacing:0.04em;background:rgba(148,163,184,0.06);border:1px dashed rgba(148,163,184,0.38);color:#94A3B8;text-decoration:none;cursor:alias;" title="Public crowd rating from IMDb — not a personal Codex score"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span style="font-family:'JetBrains Mono',monospace;font-weight:900;font-size:0.6rem;letter-spacing:0.06em;opacity:0.65;border-right:1px solid rgba(148,163,184,0.25);padding-right:6px;margin-right:1px;">IMDb</span>${item.imdbRating}</a>`:''}
         </div>
         <!-- DOMINANT TITLE -->
-        <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:clamp(2.8rem,5.5vw,4.4rem);line-height:0.92;letter-spacing:-0.03em;margin-bottom:13px;text-shadow:0 2px 24px rgba(0,0,0,0.5);">${item.title}</h1>
+        <h1 style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:clamp(3rem,5.5vw,4.6rem);line-height:0.92;letter-spacing:-0.03em;margin-bottom:14px;text-shadow:0 2px 24px rgba(0,0,0,0.5);">${item.title}</h1>
         <!-- SECONDARY META — year + director clickable -->
-        <p style="color:var(--muted);font-size:0.82rem;margin-bottom:28px;letter-spacing:0.03em;"><span style="cursor:pointer;border-bottom:1px dashed rgba(83,177,177,0.4);transition:color 0.2s;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color=''" onclick="setDecadeFilter(${item.year},'${item.type}')" title="Browse ${Math.floor((item.year||0)/10)*10}s">${item.year}</span>${getDirectors(item).length?` · `+getDirectors(item).map(n=>`<span style="color:var(--accent);cursor:pointer;" onmouseenter="showTooltip(event,'person','${esc(n).replace(/'/g,'&#39;')}')" onmouseleave="hideTooltip()" onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')">${n}</span>`).join(', '):''} · ${fm(totalM)}${item.episodes?` · ${item.episodes} eps`:''}</p>
+        <p style="color:var(--muted);font-size:1rem;margin-bottom:30px;letter-spacing:0.03em;"><span style="cursor:pointer;border-bottom:1px dashed rgba(83,177,177,0.4);transition:color 0.2s;" onmouseover="this.style.color='var(--cyan)'" onmouseout="this.style.color=''" onclick="setDecadeFilter(${item.year},'${item.type}')" title="Browse ${Math.floor((item.year||0)/10)*10}s">${item.year}</span>${getDirectors(item).length?` · `+getDirectors(item).map(n=>`<span style="color:var(--accent);cursor:pointer;" onmouseenter="showTooltip(event,'person','${esc(n).replace(/'/g,'&#39;')}')" onmouseleave="hideTooltip()" onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')">${n}</span>`).join(', '):''} · ${fm(totalM)}${item.episodes?` · ${item.episodes} eps`:''}</p>
         <!-- CLASH + GLASS RATINGS -->
         <div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:stretch;margin-bottom:26px;">
           <div class="glass-box" style="background:linear-gradient(135deg,rgba(246,144,0,0.16),rgba(239,68,68,0.09));border:1px solid rgba(246,144,0,0.42);border-radius:var(--r);padding:16px 20px;text-align:center;box-shadow:0 0 30px rgba(246,144,0,0.1),inset 0 1px 0 rgba(255,255,255,0.04);">
-            <p style="font-size:0.5rem;letter-spacing:0.18em;color:rgba(246,144,0,0.72);margin-bottom:8px;text-transform:uppercase;">CLASH</p>
+            <p style="font-size:0.72rem;letter-spacing:0.16em;color:rgba(246,144,0,0.72);margin-bottom:8px;text-transform:uppercase;">CLASH</p>
             <svg style="display:block;margin:0 auto 7px;" width="28" height="12" viewBox="0 0 32 14" fill="none" stroke="rgba(246,144,0,0.8)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7H2M2 7l5-4M2 7l5 4"/><path d="M16 7h14M30 7l-5-4M30 7l-5 4"/></svg>
-            <p style="font-family:'JetBrains Mono',monospace;font-size:2.6rem;font-weight:900;color:var(--accent);line-height:1;text-shadow:0 0 24px rgba(246,144,0,0.5);">${d.toFixed(1)}</p>
+            <p style="font-family:'JetBrains Mono',monospace;font-size:3rem;font-weight:900;color:var(--accent);line-height:1;text-shadow:0 0 24px rgba(246,144,0,0.5);">${d.toFixed(1)}</p>
           </div>
           <div class="glass-box" style="background:rgba(96,165,250,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--r);padding:16px;text-align:center;box-shadow:inset 0 1px 0 rgba(96,165,250,0.1);">
-            <p style="font-size:0.5rem;letter-spacing:0.14em;margin-bottom:9px;color:#93C5FD;text-transform:uppercase;">OLLIE · ${item.ollieStatus}</p>${oStar}
+            <p style="font-size:0.72rem;letter-spacing:0.13em;margin-bottom:9px;color:#93C5FD;text-transform:uppercase;">OLLIE · ${item.ollieStatus}</p>${oStar}
           </div>
           <div class="glass-box" style="background:rgba(244,114,182,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:var(--r);padding:16px;text-align:center;box-shadow:inset 0 1px 0 rgba(244,114,182,0.1);">
-            <p style="font-size:0.5rem;letter-spacing:0.14em;margin-bottom:9px;color:#F9A8D4;text-transform:uppercase;">JEMIMA · ${item.jemimaStatus}</p>${jStar}
+            <p style="font-size:0.72rem;letter-spacing:0.13em;margin-bottom:9px;color:#F9A8D4;text-transform:uppercase;">JEMIMA · ${item.jemimaStatus}</p>${jStar}
           </div>
         </div>
-        ${item.imdbRating&&a!==null?(()=>{
+        ${item.imdbRating&&(item.ollieRating||item.jemimaRating)?(()=>{
           const imdb=parseFloat(item.imdbRating);
-          const delta=sc-imdb;
+          const soloScore=a===null?(item.ollieRating||item.jemimaRating):null;
+          const displayScore=a===null?soloScore:sc;
+          const delta=displayScore-imdb;
           const absDelta=Math.abs(delta);
           const up=delta>0;
-          return`<div style="margin-bottom:22px;display:grid;grid-template-columns:1fr auto 1fr;gap:0;background:rgba(0,0,0,0.22);border-radius:var(--r);border:1px solid rgba(83,177,177,0.14);overflow:hidden;">
-            <div style="padding:14px 18px;text-align:center;border-right:1px solid rgba(83,177,177,0.1);">
-              <p style="font-size:0.52rem;letter-spacing:0.12em;text-transform:uppercase;color:rgba(246,144,0,0.7);margin-bottom:5px;">IMDb</p>
-              <p style="font-family:'JetBrains Mono',monospace;font-size:2rem;font-weight:700;color:var(--accent);line-height:1;">${imdb.toFixed(1)}</p>
-              <p style="font-size:0.58rem;color:var(--muted);margin-top:3px;">public consensus</p>
-            </div>
-            <div style="padding:14px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;background:${up?'rgba(16,185,129,0.07)':'rgba(239,68,68,0.07)'};">
-              <p style="font-family:'Barlow Condensed',sans-serif;font-size:2.6rem;font-weight:900;color:${up?'#10B981':'#EF4444'};line-height:1;">${up?'↑':'↓'}${absDelta.toFixed(1)}</p>
-              <p style="font-size:0.58rem;color:${up?'#10B981':'#EF4444'};letter-spacing:0.06em;font-weight:700;">${up?'ABOVE':'BELOW'} CONSENSUS</p>
-            </div>
-            <div style="padding:14px 18px;text-align:center;border-left:1px solid rgba(83,177,177,0.1);">
-              <p style="font-size:0.52rem;letter-spacing:0.12em;text-transform:uppercase;color:rgba(246,198,36,0.7);margin-bottom:5px;">CODEX ⊛</p>
-              <p style="font-family:'JetBrains Mono',monospace;font-size:2rem;font-weight:700;color:var(--gold);line-height:1;">${sc.toFixed(2)}</p>
-              <p style="font-size:0.58rem;color:var(--muted);margin-top:3px;">bayesian score</p>
+          const scoreLabel=a===null?(item.ollieRating?'OLLIE':'JEMIMA'):'CODEX BAYESIAN ⊛';
+          const scoreNote=a===null?'solo rating':'adjusted common ground score';
+          return`<div style="margin-bottom:22px;background:rgba(0,0,0,0.25);border-radius:var(--r);border:1px solid rgba(246,198,36,0.2);overflow:hidden;position:relative;">
+            <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(to right,var(--bay) 55%,rgba(148,163,184,0.35) 100%);"></div>
+            <div style="display:grid;grid-template-columns:1fr auto;align-items:center;">
+              <div style="padding:16px 22px;text-align:center;">
+                <p style="font-size:0.72rem;letter-spacing:0.14em;text-transform:uppercase;color:rgba(246,198,36,0.7);margin-bottom:6px;">${scoreLabel}</p>
+                <p style="font-family:'JetBrains Mono',monospace;font-size:3.2rem;font-weight:900;color:var(--bay);line-height:1;text-shadow:0 0 28px rgba(246,198,36,0.32);">${displayScore.toFixed(2)}</p>
+                <p style="font-size:0.72rem;color:var(--muted);margin-top:4px;">${scoreNote}</p>
+              </div>
+              <div style="padding:16px 20px;border-left:1px dashed rgba(148,163,184,0.18);text-align:center;min-width:140px;background:rgba(148,163,184,0.03);">
+                <div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-bottom:6px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><p style="font-size:0.55rem;letter-spacing:0.1em;text-transform:uppercase;color:rgba(148,163,184,0.55);font-family:'JetBrains Mono',monospace;font-weight:700;margin:0;">PUBLIC · IMDb</p></div>
+                <p style="font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:700;color:#94A3B8;line-height:1;">${imdb.toFixed(1)}</p>
+                <p style="font-family:'Barlow Condensed',sans-serif;font-size:1.2rem;font-weight:900;color:${up?'#10B981':'#EF4444'};letter-spacing:0.04em;margin-top:6px;">${up?'▲':'▼'}&nbsp;${absDelta.toFixed(1)}&nbsp;${up?'ABOVE':'BELOW'}</p>
+              </div>
             </div>
           </div>`;
         })():''}
@@ -1029,35 +1038,35 @@ function openCinema(id){
         ${(item.watchLog||[]).length>0?`<div style="margin-bottom:20px;display:flex;align-items:center;gap:10px;cursor:pointer;" onclick="openDiaryView('${id}')">
           <div style="background:rgba(246,144,0,0.1);border:1px solid rgba(246,144,0,0.28);border-radius:var(--r);padding:7px 14px;display:flex;align-items:center;gap:8px;transition:background 0.2s;" onmouseover="this.style.background='rgba(246,144,0,0.18)'" onmouseout="this.style.background='rgba(246,144,0,0.1)'">
             <span style="font-size:0.95rem;">📖</span>
-            <span style="font-size:0.72rem;color:var(--accent);font-weight:700;letter-spacing:0.04em;">${(item.watchLog||[]).length} WATCH${(item.watchLog||[]).length!==1?'ES':''} LOGGED${(item.watchLog||[]).filter(e=>e.rewatched).length?` · ${(item.watchLog||[]).filter(e=>e.rewatched).length}× REWATCH`:''}  →  VIEW DIARY</span>
+            <span style="font-size:0.82rem;color:var(--accent);font-weight:700;letter-spacing:0.04em;">${(item.watchLog||[]).length} WATCH${(item.watchLog||[]).length!==1?'ES':''} LOGGED${(item.watchLog||[]).filter(e=>e.rewatched).length?` · ${(item.watchLog||[]).filter(e=>e.rewatched).length}× REWATCH`:''}  →  VIEW DIARY</span>
           </div>
         </div>`:''}
         ${item.ollieReview||item.jemimaReview?`
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:26px;">
           <div class="review-box" style="border-top:2px solid #60A5FA;">
-            <p style="font-size:0.58rem;letter-spacing:0.1em;margin-bottom:7px;color:#60A5FA;">OLLIE'S LOG</p>
-            <p style="font-size:0.8rem;line-height:1.65;color:var(--text2);">${item.ollieReview||'<em style="color:var(--muted);">No review yet.</em>'}</p>
+            <p style="font-size:0.72rem;letter-spacing:0.1em;margin-bottom:7px;color:#60A5FA;">OLLIE'S LOG</p>
+            <p style="font-size:0.9rem;line-height:1.65;color:var(--text2);">${item.ollieReview||'<em style="color:var(--muted);">No review yet.</em>'}</p>
           </div>
           <div class="review-box" style="border-top:2px solid #F472B6;">
-            <p style="font-size:0.58rem;letter-spacing:0.1em;margin-bottom:7px;color:#F472B6;">JEMIMA'S LOG</p>
-            <p style="font-size:0.8rem;line-height:1.65;color:var(--text2);">${item.jemimaReview||'<em style="color:var(--muted);">No review yet.</em>'}</p>
+            <p style="font-size:0.72rem;letter-spacing:0.1em;margin-bottom:7px;color:#F472B6;">JEMIMA'S LOG</p>
+            <p style="font-size:0.9rem;line-height:1.65;color:var(--text2);">${item.jemimaReview||'<em style="color:var(--muted);">No review yet.</em>'}</p>
           </div>
         </div>`:''}
         ${(item.cast||[]).length?`
         <div style="margin-bottom:26px;">
-          <p style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">CAST — click to open Spotlight</p>
+          <p style="font-size:0.8rem;letter-spacing:0.11em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;">CAST — click to open Spotlight</p>
           <div style="display:flex;gap:16px;flex-wrap:wrap;">${castHtml}</div>
         </div>`:''}
         ${getDirectors(item).length?`
         <div style="margin-bottom:26px;">
-          <p style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">${item.type==='Show'?'CREATOR':'DIRECTOR'}</p>
-          <div style="display:flex;flex-direction:column;gap:10px;">${getDirectors(item).map(n=>`<div style="display:flex;align-items:center;gap:12px;cursor:pointer;transition:opacity 0.2s;" onmouseover="this.style.opacity='0.74'" onmouseout="this.style.opacity='1'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')"><img src="${pImg(n)||item.directorImageUrl||'https://via.placeholder.com/64x64/364848/F2EDE4?text=?'}" class="avatar" style="width:64px;height:64px;border:2px solid rgba(246,144,0,0.35);" onerror="this.src='https://via.placeholder.com/64x64/364848/F2EDE4?text=?'"><div style="pointer-events:none;"><p style="font-weight:700;font-size:1rem;color:var(--accent);">${n}</p><p style="font-size:0.62rem;color:var(--muted);margin-top:3px;">${item.type==='Show'?'Creator':'Director'} — open gallery →</p></div></div>`).join('')}</div>
+          <p style="font-size:0.8rem;letter-spacing:0.11em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;">${item.type==='Show'?'CREATOR':'DIRECTOR'}</p>
+          <div style="display:flex;flex-direction:column;gap:10px;">${getDirectors(item).map(n=>`<div style="display:flex;align-items:center;gap:12px;cursor:pointer;transition:opacity 0.2s;" onmouseover="this.style.opacity='0.74'" onmouseout="this.style.opacity='1'" onclick="closeCinema();openDirectorView('${esc(n).replace(/'/g,'&#39;')}')"><img src="${pImg(n)||item.directorImageUrl||'https://via.placeholder.com/105x105/364848/F2EDE4?text=?'}" class="avatar" style="width:105px;height:105px;border:2px solid rgba(246,144,0,0.35);" onerror="this.src='https://via.placeholder.com/105x105/364848/F2EDE4?text=?'"><div style="pointer-events:none;"><p style="font-weight:700;font-size:1.2rem;color:var(--accent);">${n}</p><p style="font-size:0.78rem;color:var(--muted);margin-top:4px;">${item.type==='Show'?'Creator':'Director'} — open gallery →</p></div></div>`).join('')}</div>
         </div>`:''}
-        <div style="background:rgba(0,0,0,0.18);border-radius:var(--r);padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.75rem;margin-bottom:18px;border:1px solid rgba(255,255,255,0.04);">
-          ${item.runtime?`<div><span style="color:var(--muted);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;">Runtime</span><br><span style="font-family:'JetBrains Mono',monospace;">${fm(item.runtime)}</span></div>`:''}
-          ${item.episodes?`<div><span style="color:var(--muted);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;">Episodes</span><br><span style="font-family:'JetBrains Mono',monospace;">${item.episodes}</span></div>`:''}
-          ${item.imdbId?`<div><span style="color:var(--muted);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;">IMDb</span><br><span style="font-family:'JetBrains Mono',monospace;">${item.imdbId}</span></div>`:''}
-          <div><span style="color:var(--muted);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;">Added</span><br>${item.dateAdded||'—'}</div>
+        <div style="background:rgba(0,0,0,0.18);border-radius:var(--r);padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.85rem;margin-bottom:18px;border:1px solid rgba(255,255,255,0.04);">
+          ${item.runtime?`<div><span style="color:var(--muted);font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;">Runtime</span><br><span style="font-family:'JetBrains Mono',monospace;">${fm(item.runtime)}</span></div>`:''}
+          ${item.episodes?`<div><span style="color:var(--muted);font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;">Episodes</span><br><span style="font-family:'JetBrains Mono',monospace;">${item.episodes}</span></div>`:''}
+          ${item.imdbId?`<div><span style="color:var(--muted);font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;">IMDb</span><br><span style="font-family:'JetBrains Mono',monospace;">${item.imdbId}</span></div>`:''}
+          <div><span style="color:var(--muted);font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;">Added</span><br>${item.dateAdded||'—'}</div>
         </div>
         ${item.ollieStatus!=='Watched'||item.jemimaStatus!=='Watched'?`<button class="btn btn-o" onclick="closeCinema();openPromoteModal('${id}')">✓ MARK AS WATCHED</button>`:''}
         ${(()=>{
@@ -1073,15 +1082,15 @@ function openCinema(id){
           }).filter(x=>x.score>=3).sort((a,b)=>b.score-a.score||bay(b.d)-bay(a.d)).slice(0,8).map(x=>x.d);
           if(!similar.length)return'';
           return`<div style="margin-top:28px;padding-top:20px;border-top:1px solid rgba(83,177,177,0.15);">
-            <p style="font-size:0.58rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">SEE MORE LIKE THIS</p>
-            <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;">
+            <p style="font-size:0.8rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent);margin-bottom:14px;font-weight:700;">SEE MORE LIKE THIS</p>
+            <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;">
               ${similar.map(s=>{const br=bestR(s);return`
                 <div class="more-rail-card" onclick="document.getElementById('cinema-inner').scrollTop=0;openCinema('${s.id}')">
                   <img src="${s.mediaImageUrl||''}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
                   <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.95) 0%,transparent 55%);"></div>
-                  <div style="position:absolute;bottom:0;left:0;right:0;padding:5px;">
-                    <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.62rem;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.title}</p>
-                    ${br!==null?`<span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:${rc(br)};font-weight:700;">${br.toFixed(1)}</span>`:''}
+                  <div style="position:absolute;bottom:0;left:0;right:0;padding:8px;">
+                    <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.85rem;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.title}</p>
+                    ${br!==null?`<span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:${rc(br)};font-weight:700;">${br.toFixed(1)}</span>`:''}
                   </div>
                 </div>`}).join('')}
             </div>
@@ -1167,7 +1176,7 @@ function rNexus(){
   const watched=DB.filter(d=>d.ollieStatus==='Watched'&&d.jemimaStatus==='Watched');
   const wl=DB.filter(d=>d.ollieStatus==='Watchlist'||d.jemimaStatus==='Watchlist');
   const lifeT=twMins(DB);
-  const recent=[...DB].sort((a,b)=>(b.dateAdded||'').localeCompare(a.dateAdded||'')).slice(0,8);
+  const recent=[...DB].sort((a,b)=>(b.dateAdded||'').localeCompare(a.dateAdded||'')).slice(0,24);
   const cgItems=watched.filter(i=>i.ollieRating&&i.jemimaRating).map(i=>({...i,sc:bay(i)})).sort((a,b)=>b.sc-a.sc).slice(0,5);
   const battle=watched.filter(i=>i.ollieRating&&i.jemimaRating).sort((a,b)=>dlt(b)-dlt(a))[0];
   const onThisDay=getOnThisDay();
@@ -1196,7 +1205,7 @@ function rNexus(){
       </div>
       <div style="display:grid;grid-template-columns:repeat(${Math.min(onThisDay.length,6)},1fr);gap:8px;">
         ${onThisDay.map(({item,yearsAgo})=>{const br=bestR(item);return`
-          <div class="media-card" style="aspect-ratio:2/3;" onclick="openCinema('${item.id}')">
+          <div class="media-card" style="flex-shrink:0;width:130px;aspect-ratio:2/3;" onclick="openCinema('${item.id}')">
             <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
             <div class="card-overlay"></div>
             <div style="position:absolute;top:7px;left:7px;"><span style="background:rgba(246,144,0,0.85);border-radius:2px;padding:2px 6px;font-size:0.58rem;font-weight:700;color:#fff;">${yearsAgo}yr ago</span></div>
@@ -1218,21 +1227,21 @@ function rNexus(){
           <span style="font-size:0.62rem;color:var(--muted);">watched but unrated</span>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(${Math.min(pending.length,8)},1fr);gap:6px;">
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;">
         ${pending.map(item=>{
           const oPending=item.ollieStatus==='Watched'&&!item.ollieRating;
           const jPending=item.jemimaStatus==='Watched'&&!item.jemimaRating;
-          return`<div style="position:relative;aspect-ratio:2/3;border-radius:var(--r);overflow:hidden;cursor:pointer;border:2px solid rgba(239,68,68,0.5);box-shadow:0 0 16px rgba(239,68,68,0.18);transition:transform 0.2s,box-shadow 0.2s;" onmouseover="this.style.transform='scale(1.04)';this.style.boxShadow='0 0 28px rgba(239,68,68,0.4)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 0 16px rgba(239,68,68,0.18)'" onclick="openCinema('${item.id}')">
+          return`<div style="position:relative;flex-shrink:0;width:185px;aspect-ratio:2/3;border-radius:var(--r);overflow:hidden;cursor:pointer;border:2px solid rgba(239,68,68,0.5);box-shadow:0 0 16px rgba(239,68,68,0.18);transition:transform 0.2s,box-shadow 0.2s;" onmouseover="this.style.transform='scale(1.04)';this.style.boxShadow='0 0 28px rgba(239,68,68,0.4)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='0 0 16px rgba(239,68,68,0.18)'" onclick="openCinema('${item.id}')">
             <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
             <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.98) 0%,rgba(17,34,44,0.3) 55%,transparent 100%);"></div>
             <div style="position:absolute;top:0;left:0;right:0;padding:6px;display:flex;gap:3px;flex-wrap:wrap;">
               ${oPending?`<span style="background:rgba(96,165,250,0.85);border-radius:2px;padding:2px 5px;font-size:0.52rem;font-weight:700;color:#fff;letter-spacing:0.06em;">O?</span>`:''}
               ${jPending?`<span style="background:rgba(244,114,182,0.85);border-radius:2px;padding:2px 5px;font-size:0.52rem;font-weight:700;color:#fff;letter-spacing:0.06em;">J?</span>`:''}
             </div>
-            <div style="position:absolute;bottom:0;left:0;right:0;padding:8px;">
-              <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;line-height:1.15;margin-bottom:3px;">${item.title}</p>
-              <p style="font-size:0.6rem;color:var(--text2);margin-bottom:5px;">${item.year}</p>
-              <button class="btn btn-o btn-xs" onclick="event.stopPropagation();openPromoteModal('${item.id}')" style="width:100%;justify-content:center;font-size:0.58rem;padding:4px 6px;">RATE NOW</button>
+            <div style="position:absolute;bottom:0;left:0;right:0;padding:10px;">
+              <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.95rem;line-height:1.15;margin-bottom:3px;">${item.title}</p>
+              <p style="font-size:0.7rem;color:var(--text2);margin-bottom:6px;">${item.year}</p>
+              <button class="btn btn-o btn-xs" onclick="event.stopPropagation();openPromoteModal('${item.id}')" style="width:100%;justify-content:center;font-size:0.68rem;padding:5px 6px;">RATE NOW</button>
             </div>
           </div>`;
         }).join('')}
@@ -1240,34 +1249,34 @@ function rNexus(){
     </div>`:''}
     <!-- BLINDSPOTS -->
     ${(()=>{
-      const showJem=DB.filter(d=>d.ollieRating>=8&&d.jemimaStatus!=='Watched').sort((a,b)=>b.ollieRating-a.ollieRating).slice(0,10);
-      const showOllie=DB.filter(d=>d.jemimaRating>=8&&d.ollieStatus!=='Watched').sort((a,b)=>b.jemimaRating-a.jemimaRating).slice(0,10);
+      const showJem=DB.filter(d=>d.ollieRating>=8&&d.jemimaStatus!=='Watched').sort((a,b)=>b.ollieRating-a.ollieRating).slice(0,24);
+      const showOllie=DB.filter(d=>d.jemimaRating>=8&&d.ollieStatus!=='Watched').sort((a,b)=>b.jemimaRating-a.jemimaRating).slice(0,24);
       if(!showJem.length&&!showOllie.length)return'';
       const miniCard=(item,scoreLabel,scoreVal,scoreColor)=>`
         <div class="blindspot-mini" onclick="openCinema('${item.id}')">
           <img src="${item.mediaImageUrl||''}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
           <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.95) 0%,transparent 55%);"></div>
-          <div style="position:absolute;bottom:0;left:0;right:0;padding:5px;">
-            <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.62rem;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:${scoreColor};font-weight:700;">${scoreLabel}${scoreVal}</span>
+          <div style="position:absolute;bottom:0;left:0;right:0;padding:7px;">
+            <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.8rem;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:${scoreColor};font-weight:700;">${scoreLabel}${scoreVal}</span>
           </div>
         </div>`;
       return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">
-        ${showJem.length?`<div>
+        ${showJem.length?`<div style="min-width:0;overflow:hidden;">
           <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
             <span class="sec-title" style="color:#F9A8D4;">👁 Show Jemima</span>
             <span style="font-size:0.62rem;color:var(--muted);">Ollie ★8+ · Jemima hasn't seen</span>
           </div>
-          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">
+          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch;">
             ${showJem.map(item=>miniCard(item,'O:',item.ollieRating,'#60A5FA')).join('')}
           </div>
         </div>`:'<div></div>'}
-        ${showOllie.length?`<div>
+        ${showOllie.length?`<div style="min-width:0;overflow:hidden;">
           <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
             <span class="sec-title" style="color:#93C5FD;">👁 Show Ollie</span>
             <span style="font-size:0.62rem;color:var(--muted);">Jemima ★8+ · Ollie hasn't seen</span>
           </div>
-          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;">
+          <div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;-webkit-overflow-scrolling:touch;">
             ${showOllie.map(item=>miniCard(item,'J:',item.jemimaRating,'#F472B6')).join('')}
           </div>
         </div>`:'<div></div>'}
@@ -1279,15 +1288,15 @@ function rNexus(){
         <span class="sec-title">01 — Recent Activity</span>
         <button class="btn btn-g btn-sm" onclick="nav('archive')">VIEW ALL</button>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:6px;">
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch;">
         ${recent.map(item=>{const br=bestR(item);return`
-          <div class="media-card" style="aspect-ratio:2/3;" onclick="openCinema('${item.id}')">
+          <div class="media-card" style="flex-shrink:0;width:185px;aspect-ratio:2/3;" onclick="openCinema('${item.id}')">
             <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
             <div class="card-overlay"></div>
-            <div style="position:absolute;bottom:0;left:0;right:0;padding:7px;">
-              <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.82rem;line-height:1.15;margin-bottom:1px;">${item.title}</p>
-              <p style="font-size:0.58rem;color:var(--text2);">${item.year}</p>
-              ${br!==null?`<span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;font-weight:700;color:${rc(br)};">${br.toFixed(1)}</span>`:''}
+            <div style="position:absolute;bottom:0;left:0;right:0;padding:10px;">
+              <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.95rem;line-height:1.15;margin-bottom:2px;">${item.title}</p>
+              <p style="font-size:0.68rem;color:var(--text2);">${item.year}</p>
+              ${br!==null?`<span style="font-family:'JetBrains Mono',monospace;font-size:0.88rem;font-weight:700;color:${rc(br)};">${br.toFixed(1)}</span>`:''}
             </div>
           </div>
         `}).join('')}
@@ -1413,7 +1422,7 @@ function rArchive(){
           </select>
         </div>
         <div><label class="lbl">RATING BY</label>
-          <select class="inp" style="width:110px;padding:5px 8px;" onchange="FILTERS.rateBy=this.value;rGrid()">
+          <select class="inp" style="width:110px;padding:5px 8px;" onchange="FILTERS.rateBy=this.value;SORT=this.value==='ollie'?'ollie':this.value==='jemima'?'jemima':'bay';rGrid()">
             <option value="avg" ${FILTERS.rateBy==='avg'?'selected':''}>Joint Avg</option>
             <option value="ollie" ${FILTERS.rateBy==='ollie'?'selected':''}>Ollie</option>
             <option value="jemima" ${FILTERS.rateBy==='jemima'?'selected':''}>Jemima</option>
@@ -1474,7 +1483,9 @@ function getFiltered(){
     if(s&&!item.title.toLowerCase().includes(s)&&!(item.director||'').toLowerCase().includes(s)&&!(item.creator||'').toLowerCase().includes(s)&&!(item.cast||[]).some(c=>c.toLowerCase().includes(s)))return false;
     if(FILTERS.decade){const d=parseInt(FILTERS.decade);if(item.year<d||item.year>=d+10)return false;}
     if(FILTERS.genre&&!(item.genre||[]).includes(FILTERS.genre))return false;
-    // Rating filter — uses whichever rating the user selected
+    // Rating filter — when a specific person is chosen, exclude their unrated items entirely
+    if(FILTERS.rateBy==='ollie'&&!item.ollieRating)return false;
+    if(FILTERS.rateBy==='jemima'&&!item.jemimaRating)return false;
     const rv=FILTERS.rateBy==='ollie'?item.ollieRating:FILTERS.rateBy==='jemima'?item.jemimaRating:avg(item);
     if(FILTERS.minR!==''&&rv!=null&&rv<parseFloat(FILTERS.minR))return false;
     if(FILTERS.maxR!==''&&rv!=null&&rv>parseFloat(FILTERS.maxR))return false;
@@ -1534,15 +1545,22 @@ function rGrid(){
   const statsEl=document.getElementById('archive-stats');
   if(statsEl){
     const rated=items.filter(d=>d.ollieRating&&d.jemimaRating);
-    const avgBay=rated.length?(rated.reduce((s,d)=>s+bay(d),0)/rated.length):null;
+    const avgBay=(()=>{
+      if(FILTERS.rateBy==='ollie'){const r=items.filter(d=>d.ollieRating);return r.length?(r.reduce((s,d)=>s+d.ollieRating,0)/r.length):null;}
+      if(FILTERS.rateBy==='jemima'){const r=items.filter(d=>d.jemimaRating);return r.length?(r.reduce((s,d)=>s+d.jemimaRating,0)/r.length):null;}
+      return rated.length?(rated.reduce((s,d)=>s+bay(d),0)/rated.length):null;
+    })();
     const anyFilter=FILTERS.decade||FILTERS.genre||FILTERS.minR!==''||FILTERS.maxR!==''||FILTERS.controversy||SEARCH||FILTERS.statusF!=='all';
-    statsEl.innerHTML=`<div style="display:flex;align-items:center;gap:12px;background:rgba(83,177,177,0.06);border:1px solid rgba(83,177,177,0.18);border-radius:var(--r);padding:8px 14px;flex-wrap:wrap;">
-      <span style="font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--cyan);font-weight:700;">NOW SHOWING</span>
-      <span style="font-size:0.78rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--text2);">${items.length} <span style="color:var(--muted);font-weight:400;font-size:0.68rem;">${ATAB.toLowerCase()}${items.length!==1?'s':''}</span></span>
-      ${avgBay!==null?`<span style="font-size:0.7rem;color:var(--muted);">·</span>
-      <span style="font-size:0.72rem;color:var(--muted);">avg <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--gold);">⊛${avgBay.toFixed(2)}</span> Bayesian</span>`:''}
-      ${rated.length!==items.length?`<span style="font-size:0.66rem;color:var(--muted);">(${items.length-rated.length} unrated)</span>`:''}
-      ${anyFilter?`<button class="btn btn-g btn-xs" onclick="clearFilters()" style="margin-left:auto;">✕ CLEAR FILTERS</button>`:''}
+    const ollieUnrated=items.filter(d=>!d.ollieRating).length;
+    const jemUnrated=items.filter(d=>!d.jemimaRating).length;
+    statsEl.innerHTML=`<div style="display:flex;align-items:center;gap:10px;background:rgba(246,144,0,0.06);border:1px solid rgba(246,144,0,0.22);border-radius:var(--r);padding:10px 16px;flex-wrap:wrap;">
+      <span style="font-size:0.68rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--accent);font-weight:800;">NOW SHOWING</span>
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--accent);line-height:1;">${items.length}</span>
+      <span style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:700;color:var(--accent);">${ATAB.toLowerCase()}${items.length!==1?'s':''}</span>
+      ${avgBay!==null?`<span style="font-size:0.7rem;color:rgba(255,255,255,0.2);">|</span><span style="font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--accent);font-weight:800;">Average</span><span style="font-family:'Barlow Condensed',sans-serif;font-size:1.3rem;font-weight:900;color:var(--gold);line-height:1;">${avgBay.toFixed(2)}</span>`:''}
+      ${ollieUnrated>0?`<span style="font-size:0.7rem;color:rgba(255,255,255,0.2);">|</span><span style="background:rgba(96,165,250,0.1);border:1px solid rgba(96,165,250,0.28);border-radius:2px;padding:2px 8px;font-size:0.68rem;color:#93C5FD;font-weight:600;">${ollieUnrated} unrated by Ollie</span>`:''}
+      ${jemUnrated>0?`<span style="background:rgba(244,114,182,0.1);border:1px solid rgba(244,114,182,0.28);border-radius:2px;padding:2px 8px;font-size:0.68rem;color:#F9A8D4;font-weight:600;">${jemUnrated} unrated by Jemima</span>`:''}
+      ${anyFilter?`<button class="btn btn-g btn-xs" onclick="clearFilters()" style="margin-left:auto;">&#10005; CLEAR FILTERS</button>`:''}
     </div>`;
   }
   if(!items.length){grid.innerHTML=`<div style="text-align:center;padding:60px;color:var(--muted);"><p style="font-size:1.8rem;margin-bottom:8px;">📭</p><p style="font-weight:600;">No entries found.</p><p style="font-size:0.78rem;margin-top:5px;">Try adjusting filters or sort.</p></div>`;return;}
@@ -1717,40 +1735,68 @@ function applyBulkTag(){
 function rWatchlist(){
   const vc=document.getElementById('vc');
   const wl=DB.filter(d=>d.ollieStatus==='Watchlist'||d.jemimaStatus==='Watchlist').sort((a,b)=>(a.priority||5)-(b.priority||5));
-  vc.innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:9px;">
-      <div><h2 style="font-family:'Barlow Condensed',sans-serif;font-size:1.75rem;font-weight:900;letter-spacing:0.04em;">THE WATCHLIST</h2>
-      <p style="color:var(--muted);font-size:0.78rem;">${wl.length} item${wl.length!==1?'s':''} in queue.</p></div>
-      <div style="display:flex;gap:7px;">
-        <button class="btn btn-g btn-sm" onclick="randomPick()">🎲 RANDOM PICK</button>
-        <button class="btn btn-o btn-sm" onclick="openAddModal(true)">+ ADD TO QUEUE</button>
-      </div>
-    </div>
-    ${!wl.length?`<div style="text-align:center;padding:70px;color:var(--muted);"><p style="font-size:1.8rem;margin-bottom:9px;">🎬</p><p style="font-weight:600;">Queue is empty.</p></div>`:`
+  const gridHtml=!wl.length?'':`
+    <div class="poster-grid">
+    ${wl.map(item=>`
+      <div class="media-card" style="width:100%;aspect-ratio:2/3;" onclick="openCinema('${item.id}')">
+        <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentElement.style.background='var(--surface2)'">
+        <div class="card-overlay"></div>
+        <div style="position:absolute;top:7px;left:7px;display:flex;flex-direction:column;gap:2px;">${[1,2,3,4,5].map(n=>`<div class="pip ${n<=(item.priority||3)?'on':''}"></div>`).join('')}</div>
+        <div style="position:absolute;top:7px;right:7px;display:flex;flex-direction:column;gap:2px;">
+          ${item.ollieStatus==='Watchlist'?`<span style="background:rgba(96,165,250,0.85);border-radius:2px;padding:1px 5px;font-size:0.5rem;font-weight:700;color:#fff;letter-spacing:0.05em;">O</span>`:''}
+          ${item.jemimaStatus==='Watchlist'?`<span style="background:rgba(244,114,182,0.85);border-radius:2px;padding:1px 5px;font-size:0.5rem;font-weight:700;color:#fff;letter-spacing:0.05em;">J</span>`:''}
+        </div>
+        <div style="position:absolute;bottom:0;left:0;right:0;padding:10px;">
+          <span class="badge ${bc(item.type)}" style="margin-bottom:4px;display:inline-flex;">${item.type}</span>
+          <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.9rem;line-height:1.15;margin-bottom:2px;">${item.title}</p>
+          <p style="font-size:0.62rem;color:var(--text2);">${item.year}${item.imdbRating?` · ★${item.imdbRating}`:''}</p>
+        </div>
+        <div style="position:absolute;inset:0;opacity:0;transition:opacity 0.2s;background:rgba(0,0,0,0.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0'" onclick="event.stopPropagation()">
+          <button class="btn btn-o btn-sm" onclick="openPromoteModal('${item.id}')" style="width:120px;justify-content:center;">✓ WATCHED</button>
+          <button class="btn btn-g btn-sm" onclick="openCinema('${item.id}')" style="width:120px;justify-content:center;">VIEW</button>
+          <button class="btn btn-g btn-sm" onclick="openEditModal('${item.id}')" style="width:120px;justify-content:center;">EDIT</button>
+          <button class="btn btn-d btn-sm" onclick="deleteItem('${item.id}')" style="width:120px;justify-content:center;">DELETE</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+  const listHtml=!wl.length?'':`
     <div style="display:flex;flex-direction:column;gap:9px;">
     ${wl.map(item=>`
-      <div class="media-card" style="display:flex;align-items:stretch;height:92px;cursor:default;">
-        <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:61px;height:100%;object-fit:cover;flex-shrink:0;" onerror="this.parentElement.style.paddingLeft='0';this.remove()">
-        <div style="display:flex;align-items:center;padding:0 9px;background:rgba(0,0,0,0.25);flex-shrink:0;">
+      <div class="media-card" style="display:flex;align-items:stretch;height:100px;cursor:pointer;transition:border-color 0.2s,background 0.2s;" onclick="openCinema('${item.id}')" onmouseover="this.style.borderColor='rgba(246,144,0,0.45)';this.style.background='rgba(246,144,0,0.04)'" onmouseout="this.style.borderColor='';this.style.background=''">
+        <img src="${item.mediaImageUrl||''}" alt="${item.title}" style="width:66px;height:100%;object-fit:cover;flex-shrink:0;" onerror="this.parentElement.style.paddingLeft='0';this.remove()">
+        <div style="display:flex;align-items:center;padding:0 10px;background:rgba(0,0,0,0.25);flex-shrink:0;">
           <div class="pips" style="flex-direction:column;gap:2px;">${[1,2,3,4,5].map(n=>`<div class="pip ${n<=(item.priority||3)?'on':''}"></div>`).join('')}</div>
         </div>
-        <div style="flex:1;padding:10px 12px;display:flex;flex-direction:column;justify-content:center;min-width:0;">
-          <div style="display:flex;gap:5px;margin-bottom:3px;flex-wrap:wrap;">
+        <div style="flex:1;padding:12px 14px;display:flex;flex-direction:column;justify-content:center;min-width:0;">
+          <div style="display:flex;gap:5px;margin-bottom:4px;flex-wrap:wrap;align-items:center;">
             <span class="badge ${bc(item.type)}">${item.type}</span>
-            ${item.ollieStatus==='Watchlist'?'<span style="font-size:0.58rem;color:#60A5FA;">Ollie: queued</span>':''}
-            ${item.jemimaStatus==='Watchlist'?'<span style="font-size:0.58rem;color:#F472B6;">Jemima: queued</span>':''}
+            ${item.ollieStatus==='Watchlist'?'<span style="font-size:0.62rem;color:#60A5FA;">Ollie</span>':''}
+            ${item.jemimaStatus==='Watchlist'?'<span style="font-size:0.62rem;color:#F472B6;">Jemima</span>':''}
           </div>
-          <p style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
-          <p style="font-size:0.7rem;color:var(--muted);">${item.year} · ${getDirectors(item).join(', ')||'—'} · ${fm(item.runtime)}${item.imdbRating?` · IMDb ${item.imdbRating}`:''}</p>
+          <p style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
+          <p style="font-size:0.72rem;color:var(--muted);margin-top:2px;">${item.year||''}${getDirectors(item).length?' · '+getDirectors(item).join(', '):''}${item.runtime?' · '+fm(item.runtime):''}${item.imdbRating?` · ★ IMDb ${item.imdbRating}`:''}</p>
         </div>
-        <div style="display:flex;align-items:center;gap:5px;padding:10px;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:6px;padding:10px;flex-shrink:0;" onclick="event.stopPropagation()">
           <button class="btn btn-o btn-sm" onclick="openPromoteModal('${item.id}')">✓ WATCHED</button>
-          <button class="btn btn-g btn-sm" onclick="openCinema('${item.id}')">VIEW</button>
           <button class="btn btn-g btn-sm" onclick="openEditModal('${item.id}')">EDIT</button>
           <button class="btn btn-d btn-sm" onclick="deleteItem('${item.id}')">🗑</button>
         </div>
       </div>`).join('')}
-    </div>`}`;
+    </div>`;
+  vc.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:9px;">
+      <div><h2 style="font-family:'Barlow Condensed',sans-serif;font-size:1.75rem;font-weight:900;letter-spacing:0.04em;">THE WATCHLIST</h2>
+      <p style="color:var(--muted);font-size:0.78rem;">${wl.length} item${wl.length!==1?'s':''} in queue.</p></div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+        <div style="display:flex;gap:2px;background:var(--surface);border:1px solid var(--steel);border-radius:var(--r);padding:2px;">
+          <button class="stab ${_wlView==='list'?'active':''}" onclick="_wlView='list';rWatchlist()" style="padding:4px 10px;font-size:0.7rem;">≡ LIST</button>
+          <button class="stab ${_wlView==='grid'?'active':''}" onclick="_wlView='grid';rWatchlist()" style="padding:4px 10px;font-size:0.7rem;">⊞ GRID</button>
+        </div>
+        <button class="btn btn-g btn-sm" onclick="randomPick()">🎲 RANDOM PICK</button>
+        <button class="btn btn-o btn-sm" onclick="openAddModal(true)">+ ADD TO QUEUE</button>
+      </div>
+    </div>
+    ${!wl.length?`<div style="text-align:center;padding:70px;color:var(--muted);"><p style="font-size:1.8rem;margin-bottom:9px;">🎬</p><p style="font-weight:600;">Queue is empty.</p></div>`:_wlView==='grid'?gridHtml:listHtml}`;
 }
 
 // ═══════════════════════════════ LABORATORY ═══════════════════════════════
@@ -1763,12 +1809,25 @@ function rLab(){
   const vc=document.getElementById('vc');
   const ranked=DB.filter(d=>d.ollieRating&&d.jemimaRating).map(d=>({...d,sc:bay(d),dv:dlt(d),av:avg(d)})).sort((a,b)=>b.sc-a.sc);
   vc.innerHTML=`
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px;">
-      <div>
-        <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:900;letter-spacing:0.04em;">THE LABORATORY</h2>
-        <p style="color:var(--muted);font-size:0.85rem;margin-top:4px;">Deep analytics and data dissection — ${DB.length} entries, ${ranked.length} mutually rated.</p>
+    <div style="margin-bottom:8px;">
+      <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:2rem;font-weight:900;letter-spacing:0.04em;">THE LABORATORY</h2>
+      <p style="color:var(--muted);font-size:0.85rem;margin-top:4px;">Deep analytics and data dissection — ${DB.length} entries, ${ranked.length} mutually rated.</p>
+    </div>
+
+    <!-- VISUAL SHOWROOM -->
+    <div class="chart-wrap" style="margin-bottom:20px;background:linear-gradient(135deg,rgba(17,34,44,0.9),rgba(28,88,88,0.4));border-color:rgba(246,144,0,0.25);">
+      <p style="font-size:0.62rem;font-weight:700;letter-spacing:0.15em;color:var(--accent);text-transform:uppercase;margin-bottom:4px;">VISUAL SHOWROOM</p>
+      <p style="font-size:0.78rem;color:var(--muted);margin-bottom:16px;">Export your Codex as a shareable card or browse your top-rated films as a visual wall.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;background:rgba(0,0,0,0.25);border:1px solid rgba(246,144,0,0.3);border-radius:var(--r);padding:16px 20px;cursor:pointer;transition:all 0.25s;" onmouseover="this.style.borderColor='var(--accent)';this.style.background='rgba(246,144,0,0.08)'" onmouseout="this.style.borderColor='rgba(246,144,0,0.3)';this.style.background='rgba(0,0,0,0.25)'" onclick="openWrappedView(365)">
+          <p style="font-family:'Barlow Condensed',sans-serif;font-size:1.35rem;font-weight:900;letter-spacing:0.04em;color:var(--accent);margin-bottom:3px;">🎬 YEAR IN REVIEW</p>
+          <p style="font-size:0.72rem;color:var(--muted);line-height:1.4;">Your year as a shareable Wrapped-style card — top films, stats, genres, and more. Built for Instagram.</p>
+        </div>
+        <div style="flex:1;min-width:200px;background:rgba(0,0,0,0.25);border:1px solid rgba(83,177,177,0.25);border-radius:var(--r);padding:16px 20px;cursor:pointer;transition:all 0.25s;" onmouseover="this.style.borderColor='var(--cyan)';this.style.background='rgba(83,177,177,0.07)'" onmouseout="this.style.borderColor='rgba(83,177,177,0.25)';this.style.background='rgba(0,0,0,0.25)'" onclick="openPosterWall()">
+          <p style="font-family:'Barlow Condensed',sans-serif;font-size:1.35rem;font-weight:900;letter-spacing:0.04em;color:var(--cyan);margin-bottom:3px;">🖼 POSTER WALL</p>
+          <p style="font-size:0.72rem;color:var(--muted);line-height:1.4;">Browse your top-rated films as a visual poster grid. Filterable by type, score, and count. Print-friendly.</p>
+        </div>
       </div>
-      <button class="btn btn-g btn-sm" onclick="openPosterWall()" style="flex-shrink:0;">🖼 POSTER WALL</button>
     </div>
 
     <!-- ① TASTE COMPATIBILITY -->
@@ -1797,8 +1856,9 @@ function rLab(){
 
     <!-- ⑤ DELTA BATTLEGROUND -->
     <div class="chart-wrap" style="margin-bottom:16px;">
-      ${_labTitle('Delta Battleground — Top 10 Rating Gaps','The entries where taste diverged furthest. Blue bars = Ollie · Pink bars = Jemima.')}
+      ${_labTitle('Delta Battleground — Top 10 Rating Gaps','The entries where taste diverged furthest. Click any bar to open that entry. Blue = Ollie · Pink = Jemima.')}
       <div style="height:290px;"><canvas id="delta-chart"></canvas></div>
+      <div id="dir-delta-wrap"></div>
     </div>
 
     <!-- ⑥ RATING DRIFT -->
@@ -1880,7 +1940,7 @@ function rLab(){
       </div>
     </div>`;
 
-  rDeltaChart();rGenreChart();rDriftChart();rHeatmap();rCompat();rBlindSpots();rHistogram();rHeadToHead();
+  rDeltaChart();rDirectorDelta();rGenreChart();rDriftChart();rHeatmap();rCompat();rBlindSpots();rHistogram();rHeadToHead();
 }
 
 // ─── Standalone Lab section renderers ──────────────────────────────────────────
@@ -1891,25 +1951,29 @@ function rHistogram(){
   if(!oRatings.length&&!jRatings.length){wrap.innerHTML='<p style="color:var(--muted);font-size:0.8rem;">No ratings yet.</p>';return;}
   const oCounts=[];const jCounts=[];
   for(let i=1;i<=10;i++){oCounts.push(oRatings.filter(r=>r===i).length);jCounts.push(jRatings.filter(r=>r===i).length);}
-  const maxC=Math.max(...oCounts,...jCounts,1);
   const oSum=oRatings.reduce((a,b)=>a+b,0);const jSum=jRatings.reduce((a,b)=>a+b,0);
-  let html='<div style="display:flex;gap:6px;align-items:flex-end;padding:0 2px;margin-bottom:4px;">';
-  for(let i=0;i<10;i++){
-    const oH=Math.round((oCounts[i]/maxC)*100);const jH=Math.round((jCounts[i]/maxC)*100);
-    html+=`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;">
-      <div style="display:flex;gap:1px;align-items:flex-end;height:100px;">
-        <div style="flex:1;background:#60A5FA;height:${oH}px;border-radius:1px 1px 0 0;opacity:0.85;${oCounts[i]?'min-height:3px;':''}" title="Ollie ★${i+1}: ${oCounts[i]}x"></div>
-        <div style="flex:1;background:#F472B6;height:${jH}px;border-radius:1px 1px 0 0;opacity:0.85;${jCounts[i]?'min-height:3px;':''}" title="Jemima ★${i+1}: ${jCounts[i]}x"></div>
-      </div>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--muted);">${i+1}</span>
-    </div>`;
-  }
-  html+=`</div>
-  <div style="display:flex;gap:20px;margin-top:10px;font-size:0.72rem;flex-wrap:wrap;">
+  if(chartInst.histogram){try{chartInst.histogram.destroy();}catch(e){}chartInst.histogram=null;}
+  wrap.innerHTML=`<div style="height:200px;position:relative;"><canvas id="hist-chart"></canvas></div>
+  <div style="display:flex;gap:20px;margin-top:12px;font-size:0.72rem;flex-wrap:wrap;">
     <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#60A5FA;border-radius:1px;display:inline-block;"></span>Ollie — ${oRatings.length} ratings, avg <strong style="color:#60A5FA;">${oRatings.length?(oSum/oRatings.length).toFixed(2):'—'}</strong></span>
     <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;background:#F472B6;border-radius:1px;display:inline-block;"></span>Jemima — ${jRatings.length} ratings, avg <strong style="color:#F472B6;">${jRatings.length?(jSum/jRatings.length).toFixed(2):'—'}</strong></span>
   </div>`;
-  wrap.innerHTML=html;
+  setTimeout(()=>{
+    const ctx=document.getElementById('hist-chart');if(!ctx)return;
+    chartInst.histogram=new Chart(ctx,{type:'bar',data:{
+      labels:['1','2','3','4','5','6','7','8','9','10'],
+      datasets:[
+        {label:'Ollie',data:oCounts,backgroundColor:'rgba(96,165,250,0.82)',borderRadius:2,borderSkipped:false},
+        {label:'Jemima',data:jCounts,backgroundColor:'rgba(244,114,182,0.82)',borderRadius:2,borderSkipped:false}
+      ]
+    },options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#A8C4CC',font:{family:'Barlow',size:11}}}},
+      scales:{
+        x:{grid:{color:'rgba(83,177,177,0.12)'},ticks:{color:'#A8C4CC',font:{size:11}}},
+        y:{grid:{color:'rgba(83,177,177,0.12)'},ticks:{color:'#A8C4CC',font:{size:10},precision:0,stepSize:1},beginAtZero:true}
+      }
+    }});
+  },0);
 }
 
 function rHeadToHead(){
@@ -1944,7 +2008,7 @@ function rHeadToHead(){
     ${genreRows.length?`<p style="font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">GENRE DIVERGENCE — who rates each genre higher</p>
     <div style="display:flex;flex-direction:column;gap:5px;">
       ${genreRows.map(({g,count,go,gj,diff})=>`<div style="display:grid;grid-template-columns:120px 1fr auto auto;gap:8px;align-items:center;font-size:0.76rem;">
-        <span style="color:var(--text2);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g}</span>
+        <span style="color:var(--accent);font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color 0.2s;" onclick="setGenreFilter('${esc(g)}')" onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'" title="Browse ${g} in Archive">${g}</span>
         <div style="background:rgba(0,0,0,0.2);border-radius:1px;height:6px;overflow:hidden;"><div style="height:100%;background:${diff>0?'#60A5FA':'#F472B6'};width:${Math.min(100,Math.abs(diff)/3*100)}%;"></div></div>
         <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:${diff>0?'#60A5FA':'#F472B6'};font-weight:700;">${diff>0?'O+':'J+'}${Math.abs(diff).toFixed(1)}</span>
         <span style="font-size:0.6rem;color:var(--muted);">${count}</span>
@@ -1955,7 +2019,9 @@ function rHeadToHead(){
 
 function buildTI(user,minR){
   const items=DB.filter(d=>{
-    if(d.ollieStatus!=='Watched'||d.jemimaStatus!=='Watched')return false;
+    if(user==='both'){if(d.ollieStatus!=='Watched'||d.jemimaStatus!=='Watched')return false;}
+    else if(user==='ollie'){if(d.ollieStatus!=='Watched')return false;}
+    else if(user==='jemima'){if(d.jemimaStatus!=='Watched')return false;}
     if(minR!==null&&minR!==''){
       const r=user==='ollie'?d.ollieRating:user==='jemima'?d.jemimaRating:avg(d);
       if(!r||r<parseFloat(minR))return false;
@@ -1964,15 +2030,18 @@ function buildTI(user,minR){
   });
   const mins=twMins(items),days=Math.floor(mins/1440),hrs=Math.floor((mins%1440)/60);
   const debtM=twMins(items.filter(d=>dlt(d)>2)),debtH=Math.floor(debtM/60);
-  return`<div style="text-align:center;margin-bottom:12px;">
-    <p style="font-family:'JetBrains Mono',monospace;font-size:1.9rem;font-weight:700;color:var(--accent);">${days}d ${hrs}h</p>
-    <p style="font-size:0.68rem;color:var(--muted);">${items.length} matched entries</p>
+  const rewatches=items.reduce((s,d)=>s+((d.watchLog||[]).filter(e=>e.rewatched).length),0);
+  const byType=['Film','Show','Album'].map(t=>{const ts=items.filter(d=>d.type===t);return{t,count:ts.length,hours:Math.floor(twMins(ts)/60)};}).filter(x=>x.count>0);
+  const top5=[...items].filter(d=>d.runtime).sort((a,b)=>(b.runtime||0)-(a.runtime||0)).slice(0,5);
+  return`
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">
+    <div class="stat-box" style="padding:12px;text-align:center;"><p style="font-size:0.52rem;letter-spacing:0.1em;color:var(--muted);margin-bottom:4px;">TOTAL TIME</p><p style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--accent);line-height:1;">${days}d ${hrs}h</p><p style="font-size:0.58rem;color:var(--muted);margin-top:2px;">${items.length} entries</p></div>
+    <div class="stat-box" style="padding:12px;text-align:center;"><p style="font-size:0.52rem;letter-spacing:0.1em;color:var(--danger);margin-bottom:4px;">DISPUTED TIME</p><p style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--danger);line-height:1;">${debtH}h</p><p style="font-size:0.58rem;color:var(--muted);margin-top:2px;">clash Δ&gt;2.0 entries</p></div>
+    <div class="stat-box" style="padding:12px;text-align:center;"><p style="font-size:0.52rem;letter-spacing:0.1em;color:var(--cyan);margin-bottom:4px;">REWATCHES</p><p style="font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--cyan);line-height:1;">${rewatches}</p><p style="font-size:0.58rem;color:var(--muted);margin-top:2px;">logged rewatch entries</p></div>
   </div>
-  <div style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:var(--r);padding:9px;text-align:center;">
-    <p style="font-size:0.6rem;letter-spacing:0.08em;color:var(--danger);margin-bottom:1px;">TIME DEBT (Δ&gt;2.0)</p>
-    <p style="font-family:'JetBrains Mono',monospace;font-size:1.05rem;font-weight:700;color:var(--danger);">${debtH}h</p>
-    <p style="font-size:0.62rem;color:var(--muted);">on contentious entries</p>
-  </div>`;
+  ${byType.length>1?`<div style="display:flex;gap:6px;margin-bottom:14px;">${byType.map(({t,count,hours})=>`<div style="flex:1;background:rgba(83,177,177,0.06);border:1px solid rgba(83,177,177,0.15);border-radius:var(--r);padding:8px;text-align:center;"><p style="font-size:0.58rem;color:var(--muted);margin-bottom:3px;">${t.toUpperCase()}</p><p style="font-family:'JetBrains Mono',monospace;font-size:0.95rem;font-weight:700;color:var(--text);">${hours}h</p><p style="font-size:0.58rem;color:var(--muted);">${count}</p></div>`).join('')}</div>`:''}
+  ${top5.length?`<p style="font-size:0.58rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:7px;">BIGGEST TIME INVESTMENTS</p>
+  <div style="display:flex;flex-direction:column;gap:4px;">${top5.map(d=>`<div style="display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:7px 10px;background:rgba(0,0,0,0.15);border-radius:var(--r);cursor:pointer;transition:background 0.2s;" onclick="openCinema('${d.id}')" onmouseover="this.style.background='rgba(83,177,177,0.07)'" onmouseout="this.style.background='rgba(0,0,0,0.15)'"><span style="font-size:0.8rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${d.title}</span><span style="font-size:0.68rem;color:var(--muted);">${d.year||''}</span><span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:var(--accent);font-weight:700;">${fm(d.runtime)}</span></div>`).join('')}</div>`:''}`;
 }
 function updateTI(){
   const u=document.getElementById('ti-user')?.value,m=document.getElementById('ti-min')?.value;
@@ -1980,12 +2049,49 @@ function updateTI(){
 }
 function rDeltaChart(){
   const ctx=document.getElementById('delta-chart');if(!ctx)return;
-  const items=DB.filter(d=>d.ollieRating&&d.jemimaRating).map(d=>({title:d.title,o:d.ollieRating,j:d.jemimaRating,d:dlt(d)})).sort((a,b)=>b.d-a.d).slice(0,10);
+  const items=DB.filter(d=>d.ollieRating&&d.jemimaRating).map(d=>({id:d.id,title:d.title,o:d.ollieRating,j:d.jemimaRating,d:dlt(d)})).sort((a,b)=>b.d-a.d).slice(0,10);
+  if(chartInst.delta){try{chartInst.delta.destroy();}catch(e){}}
   chartInst.delta=new Chart(ctx,{type:'bar',data:{
     labels:items.map(i=>i.title.length>16?i.title.slice(0,15)+'…':i.title),
     datasets:[{label:'Ollie',data:items.map(i=>i.o),backgroundColor:'rgba(96,165,250,0.82)',borderRadius:2},{label:'Jemima',data:items.map(i=>i.j),backgroundColor:'rgba(244,114,182,0.82)',borderRadius:2}]
-  },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#A8C4CC',font:{family:'Barlow',size:11}}}},
-    scales:{x:{grid:{color:'rgba(83,177,177,0.12)'},ticks:{color:'#A8C4CC',font:{size:10}}},y:{min:0,max:10,grid:{color:'rgba(83,177,177,0.12)'},ticks:{color:'#A8C4CC',font:{size:10}}}}}});
+  },options:{responsive:true,maintainAspectRatio:false,
+    plugins:{
+      legend:{labels:{color:'#A8C4CC',font:{family:'Barlow',size:11}}},
+      tooltip:{callbacks:{title:tt=>[items[tt[0].dataIndex].title]}}
+    },
+    scales:{x:{grid:{color:'rgba(83,177,177,0.12)'},ticks:{color:'#A8C4CC',font:{size:10}}},y:{min:0,max:10,grid:{color:'rgba(83,177,177,0.12)'},ticks:{color:'#A8C4CC',font:{size:10}}}},
+    onClick:(evt,els)=>{if(els.length)openCinema(items[els[0].index].id);}
+  }});
+}
+function rDirectorDelta(){
+  const wrap=document.getElementById('dir-delta-wrap');if(!wrap)return;
+  const mutual=DB.filter(d=>d.ollieRating&&d.jemimaRating);
+  const dirMap={};
+  mutual.forEach(d=>{
+    getDirectors(d).forEach(name=>{
+      if(!dirMap[name])dirMap[name]={name,items:[],oSum:0,jSum:0};
+      dirMap[name].items.push(d);dirMap[name].oSum+=d.ollieRating;dirMap[name].jSum+=d.jemimaRating;
+    });
+  });
+  const rows=Object.values(dirMap).filter(x=>x.items.length>=2).map(x=>({
+    name:x.name,count:x.items.length,
+    oAvg:x.oSum/x.items.length,jAvg:x.jSum/x.items.length,
+    diff:(x.oSum-x.jSum)/x.items.length
+  })).sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff)).slice(0,8);
+  if(!rows.length){wrap.innerHTML='';return;}
+  const maxD=Math.max(...rows.map(r=>Math.abs(r.diff)),0.1);
+  wrap.innerHTML=`<p style="font-size:0.6rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px;">DIRECTOR DIVERGENCE — who rates each director higher</p>
+  <div style="display:flex;flex-direction:column;gap:5px;">
+    ${rows.map(({name,count,oAvg,jAvg,diff})=>`<div style="display:grid;grid-template-columns:150px 1fr auto auto;gap:8px;align-items:center;font-size:0.76rem;">
+      <span style="color:var(--accent);font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color 0.2s;"
+        onclick="openDirectorView('${esc(name).replace(/'/g,"&#39;")}')"
+        onmouseover="this.style.color='#E8874A'" onmouseout="this.style.color='var(--accent)'"
+        title="Open ${name} spotlight">${name}</span>
+      <div style="background:rgba(0,0,0,0.2);border-radius:1px;height:6px;overflow:hidden;"><div style="height:100%;background:${diff>0?'#60A5FA':'#F472B6'};width:${Math.min(100,Math.abs(diff)/maxD*100)}%;border-radius:1px;"></div></div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:${diff>0?'#60A5FA':'#F472B6'};font-weight:700;min-width:46px;text-align:right;">${diff>0?'O+':'J+'}${Math.abs(diff).toFixed(1)}</span>
+      <span style="font-size:0.6rem;color:var(--muted);min-width:24px;text-align:right;">${count}</span>
+    </div>`).join('')}
+  </div>`;
 }
 function rGenreChart(){
   const ctx=document.getElementById('genre-chart');if(!ctx)return;
@@ -2145,6 +2251,16 @@ function addToWatchlistFromBlindspot(title,year,director,genres){
   toast(`"${title}" added to Watchlist`,'🎬');
   document.querySelector(`[data-bs="${normTitle(title)}"]`)&&(document.querySelector(`[data-bs="${normTitle(title)}"]`).innerHTML=`<span style="color:var(--success)">✓ ON WATCHLIST</span>`);
 }
+function addAndFetchBlindspot(title,year,director,genres){
+  const exists=DB.find(i=>normTitle(i.title)===normTitle(title));
+  if(exists){toast('Already in Codex — opening editor','⚠');openEditModal(exists.id);return;}
+  const id=gid();
+  const genre=genres&&genres[0]?genres[0]:'';
+  DB.push({id,title,year,director,type:'Film',genre,ollieStatus:'Watchlist',jemimaStatus:'Watchlist',ollieRating:null,jemimaRating:null,watchLog:[],dateAdded:new Date().toISOString().split('T')[0],runtime:null,mediaImageUrl:'',directorImageUrl:'',cast:[],castImageUrls:{},backdrop:'',plot:'',tags:[]});
+  saveDB();
+  toast(`"${title}" added — use ✨ Magic Fetch to load details`,'🎬');
+  openEditModal(id);
+}
 function blindSpotRow(f){
   const nt=normTitle(f.t);
   const genres=f.g.map(g=>`<span style="background:${genreColor(g)}22;color:${genreColor(g)};border:1px solid ${genreColor(g)}44;border-radius:2px;padding:1px 6px;font-size:9px;font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:0.05em;">${g}</span>`).join(' ');
@@ -2154,7 +2270,10 @@ function blindSpotRow(f){
       <div style="font-size:11px;color:var(--muted);margin-top:2px;">${esc(f.d)}</div>
       <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">${genres}</div>
     </div>
-    <button data-bs="${nt}" onclick="addToWatchlistFromBlindspot('${esc(f.t)}',${f.y},'${esc(f.d)}',${JSON.stringify(f.g)})" style="flex-shrink:0;background:var(--accent);color:#fff;border:none;border-radius:2px;padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='var(--a2)'" onmouseout="this.style.background='var(--accent)'">+ WATCHLIST</button>
+    <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0;">
+      <button onclick="addAndFetchBlindspot('${esc(f.t)}',${f.y},'${esc(f.d)}',${JSON.stringify(f.g)})" style="background:var(--accent);color:#fff;border:none;border-radius:2px;padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;cursor:pointer;transition:background 0.2s;white-space:nowrap;" onmouseover="this.style.background='var(--a2)'" onmouseout="this.style.background='var(--accent)'">✨ FETCH &amp; ADD</button>
+      <button data-bs="${nt}" onclick="addToWatchlistFromBlindspot('${esc(f.t)}',${f.y},'${esc(f.d)}',${JSON.stringify(f.g)})" style="background:transparent;color:var(--muted);border:1px solid rgba(83,177,177,0.25);border-radius:2px;padding:4px 12px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:0.08em;cursor:pointer;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.borderColor='var(--cyan)';this.style.color='var(--cyan)'" onmouseout="this.style.borderColor='rgba(83,177,177,0.25)';this.style.color='var(--muted)'">+ WATCHLIST</button>
+    </div>
   </div>`;
 }
 function rBlindSpots(){
@@ -2891,32 +3010,39 @@ function closeDiaryView(){document.getElementById('diary-view').classList.remove
 
 // ─── YEAR IN REVIEW ───
 function getYearData(days){
-  const cutoff=new Date();
-  cutoff.setDate(cutoff.getDate()-days);
+  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
   const cutStr=cutoff.toISOString().split('T')[0];
-  const watched=[];
-  DB.forEach(item=>{
-    (item.watchLog||[]).forEach(e=>{
-      if(e.date>=cutStr)watched.push({...e,item});
-    });
-  });
-  watched.sort((a,b)=>a.date.localeCompare(b.date));
-  const total=watched.length;
-  const rated=watched.filter(e=>e.ollieRating&&e.jemimaRating);
-  const avgO=watched.filter(e=>e.ollieRating).reduce((s,e,_,a)=>s+e.ollieRating/a.length,0)||0;
-  const avgJ=watched.filter(e=>e.jemimaRating).reduce((s,e,_,a)=>s+e.jemimaRating/a.length,0)||0;
-  // Genre breakdown
-  const gMap={};watched.forEach(e=>{const g=e.item.genre||'Other';gMap[g]=(gMap[g]||0)+1;});
-  const topGenres=Object.entries(gMap).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([g,c])=>({genre:g,count:c}));
-  // Top rated (both rated, sorted by avg)
-  const topRated=[...DB].filter(i=>i.ollieRating&&i.jemimaRating).sort((a,b)=>avg(b)-avg(a));
-  const topItem=topRated[0]||null;
-  // Most contested
-  const contested=[...DB].filter(i=>i.ollieRating&&i.jemimaRating).sort((a,b)=>dlt(b)-dlt(a));
-  const contestedItem=contested[0]||null;
-  // Total hours
-  const totalMins=watched.reduce((s,e)=>{const i=e.item;return s+(i.type==='Show'?(i.runtime||0)*(i.episodes||1):(i.runtime||0));},0);
-  return{total,avgO,avgJ,topGenres,topItem,contestedItem,totalMins,days};
+  // Collect log entries and unique items in period
+  const logEntries=[];const seenIds=new Set();
+  DB.forEach(item=>{(item.watchLog||[]).forEach(e=>{if(e.date>=cutStr){logEntries.push({...e,item});seenIds.add(item.id);}});});
+  logEntries.sort((a,b)=>a.date.localeCompare(b.date));
+  const periodItems=[...seenIds].map(id=>DB.find(d=>d.id===id)).filter(Boolean);
+  const total=logEntries.length;
+  const uniqueCount=periodItems.length;
+  // Avg ratings
+  const oRated=periodItems.filter(i=>i.ollieRating);
+  const jRated=periodItems.filter(i=>i.jemimaRating);
+  const avgO=oRated.length?oRated.reduce((s,i)=>s+i.ollieRating,0)/oRated.length:0;
+  const avgJ=jRated.length?jRated.reduce((s,i)=>s+i.jemimaRating,0)/jRated.length:0;
+  // Genre breakdown (array-aware)
+  const gMap={};periodItems.forEach(i=>{(Array.isArray(i.genre)?i.genre:[i.genre]).filter(Boolean).forEach(g=>{gMap[g]=(gMap[g]||0)+1;});});
+  const topGenres=Object.entries(gMap).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([genre,count])=>({genre,count}));
+  // Top films by Bayesian
+  const mutual=periodItems.filter(i=>i.ollieRating&&i.jemimaRating);
+  const topFilms=mutual.slice().sort((a,b)=>bay(b)-bay(a)).slice(0,5);
+  const topItem=mutual.slice().sort((a,b)=>avg(b)-avg(a))[0]||null;
+  const contestedItem=mutual.slice().sort((a,b)=>dlt(b)-dlt(a))[0]||null;
+  // Top director
+  const dirMap={};periodItems.forEach(i=>{getDirectors(i).forEach(d=>{if(d)dirMap[d]=(dirMap[d]||0)+1;});});
+  const topDirectorEntry=Object.entries(dirMap).sort((a,b)=>b[1]-a[1])[0]||null;
+  const topDirector=topDirectorEntry?{name:topDirectorEntry[0],count:topDirectorEntry[1]}:null;
+  // Rewatches
+  const rewatches=logEntries.filter(e=>e.rewatched).length;
+  // Type breakdown
+  const byType={};periodItems.forEach(i=>{byType[i.type]=(byType[i.type]||0)+1;});
+  // Total time
+  const totalMins=logEntries.reduce((s,e)=>{const i=e.item;return s+(i.type==='Show'?(i.runtime||0)*(i.episodes||1):(i.runtime||0));},0);
+  return{total,uniqueCount,avgO,avgJ,topGenres,topFilms,topItem,contestedItem,topDirector,rewatches,byType,totalMins,days};
 }
 
 function openWrappedView(days){
@@ -2924,66 +3050,120 @@ function openWrappedView(days){
   const data=getYearData(days);
   const inner=document.getElementById('wrapped-inner');
   const label=days===365?'YEAR IN REVIEW':days===180?'LAST 6 MONTHS':'LAST 30 DAYS';
-  const bestTitle=data.topItem?data.topItem.title:'—';
-  const bestAvg=data.topItem?avg(data.topItem):null;
-  const clashTitle=data.contestedItem?data.contestedItem.title:'—';
-  const clashDelta=data.contestedItem?dlt(data.contestedItem):null;
   const hrs=Math.floor(data.totalMins/60);
-  const topGenresHTML=data.topGenres.map((g,i)=>`
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
-      <div style="width:${Math.round(100*(g.count/(data.topGenres[0]||{count:1}).count))}%;background:rgba(246,144,0,${0.35+i*0.15});height:20px;border-radius:1px;transition:width 0.4s;"></div>
-      <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:0.06em;white-space:nowrap;">${g.genre} <span style="color:var(--muted);font-size:11px;font-weight:400;">${g.count}×</span></div>
-    </div>`).join('');
+  const maxGenreCount=data.topGenres[0]?.count||1;
+  const genreColors=['#F97316','#6366F1','#10B981','#F43F5E','#8B5CF6'];
+
+  const posterStrip=data.topFilms.length?`
+    <div style="margin-bottom:28px;">
+      <p style="font-size:0.6rem;letter-spacing:0.14em;text-transform:uppercase;color:rgba(246,144,0,0.65);margin-bottom:12px;font-family:'JetBrains Mono',monospace;">TOP RATED THIS PERIOD</p>
+      <div style="display:grid;grid-template-columns:repeat(${data.topFilms.length},1fr);gap:8px;">
+        ${data.topFilms.map((item,i)=>`
+          <div style="position:relative;aspect-ratio:2/3;border-radius:3px;overflow:hidden;cursor:pointer;border:1px solid rgba(246,198,36,${i===0?'0.45':'0.15'});transition:transform 0.2s;" onmouseover="this.style.transform='scale(1.03)'" onmouseout="this.style.transform='scale(1)'" onclick="closeWrappedView();openCinema('${item.id}')">
+            <img src="${item.mediaImageUrl||''}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.style.background='#1C5858'">
+            <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(17,34,44,0.97) 0%,rgba(17,34,44,0.15) 55%,transparent 100%);"></div>
+            ${i===0?`<div style="position:absolute;top:6px;left:0;right:0;text-align:center;"><span style="background:rgba(246,198,36,0.9);color:#11222C;border-radius:2px;padding:2px 6px;font-family:'JetBrains Mono',monospace;font-size:0.5rem;font-weight:900;letter-spacing:0.08em;">★ TOP PICK</span></div>`:`<div style="position:absolute;top:5px;left:5px;background:rgba(17,34,44,0.8);border-radius:2px;padding:1px 5px;font-family:'JetBrains Mono',monospace;font-size:0.5rem;color:var(--muted);">#${i+1}</div>`}
+            <div style="position:absolute;bottom:0;left:0;right:0;padding:7px;">
+              <p style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.72rem;line-height:1.1;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.title}</p>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;font-weight:700;color:var(--bay);">⊛ ${bay(item).toFixed(2)}</p>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`:data.total===0?`<div style="text-align:center;padding:32px;color:var(--muted);margin-bottom:20px;border:1px solid rgba(255,255,255,0.06);border-radius:2px;"><p style="font-size:1.5rem;margin-bottom:8px;">📭</p><p style="font-size:0.85rem;">No diary entries in this period yet.<br>Add diary dates to your watch logs to see your year in review.</p></div>`:'';
+
   inner.innerHTML=`
-    <div style="background:linear-gradient(160deg,#11222C 0%,#11222C 40%,#11222C 100%);border:1px solid rgba(246,144,0,0.3);border-radius:4px;padding:36px 32px;position:relative;overflow:hidden;">
-      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#B86A00,#F69000,#D47A00);"></div>
-      <div style="position:absolute;top:-60px;right:-40px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(246,144,0,0.12) 0%,transparent 70%);pointer-events:none;"></div>
-      <!-- HEADER -->
-      <div style="margin-bottom:28px;">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.2em;color:var(--accent);margin-bottom:4px;">${new Date().getFullYear()} · CODEX</div>
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.8rem;font-weight:900;line-height:0.9;letter-spacing:-0.01em;">${label}</div>
-      </div>
-      <!-- STAT GRID -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:24px;">
-        <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(246,144,0,0.15);border-radius:2px;padding:14px;">
-          <div style="font-size:9px;letter-spacing:0.14em;color:var(--muted);margin-bottom:4px;">TITLES WATCHED</div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.4rem;font-weight:900;color:var(--accent);line-height:1;">${data.total}</div>
+    <div style="background:linear-gradient(160deg,#0D1C24 0%,#11222C 45%,#0A1920 100%);border:1px solid rgba(246,144,0,0.35);border-radius:4px;padding:36px 32px 28px;position:relative;overflow:hidden;max-width:820px;margin:0 auto;">
+      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#B86A00,#F69000,#F6C624,#F69000,#B86A00);"></div>
+      <div style="position:absolute;top:-80px;right:-60px;width:280px;height:280px;border-radius:50%;background:radial-gradient(circle,rgba(246,144,0,0.1) 0%,transparent 70%);pointer-events:none;"></div>
+      <div style="position:absolute;bottom:-60px;left:-40px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(83,177,177,0.07) 0%,transparent 70%);pointer-events:none;"></div>
+
+      <!-- HEADER ROW -->
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;letter-spacing:0.22em;color:var(--accent);margin-bottom:5px;">${new Date().getFullYear()} · CODEX · OLLIE &amp; JEMIMA</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:3.2rem;font-weight:900;line-height:0.88;letter-spacing:-0.02em;text-transform:uppercase;">${label}</div>
         </div>
-        <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(246,144,0,0.15);border-radius:2px;padding:14px;">
-          <div style="font-size:9px;letter-spacing:0.14em;color:var(--muted);margin-bottom:4px;">HOURS SPENT</div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.4rem;font-weight:900;color:var(--accent);line-height:1;">${hrs}</div>
-        </div>
-        <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(246,144,0,0.15);border-radius:2px;padding:14px;">
-          <div style="font-size:9px;letter-spacing:0.14em;color:#93C5FD;margin-bottom:4px;">OLLIE AVG</div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.4rem;font-weight:900;color:#60A5FA;line-height:1;">${data.avgO?data.avgO.toFixed(1):'—'}</div>
-          <div style="font-size:9px;letter-spacing:0.14em;color:#F9A8D4;margin-top:4px;">JEM: ${data.avgJ?data.avgJ.toFixed(1):'—'}</div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0;margin-top:4px;">
+          ${[365,180,30].map(d=>`<button onclick="openWrappedView(${d})" style="background:${days===d?'rgba(246,144,0,0.18)':'transparent'};color:${days===d?'var(--accent)':'var(--muted)'};border:1px solid ${days===d?'var(--accent)':'rgba(255,255,255,0.15)'};border-radius:2px;padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;font-weight:700;cursor:pointer;transition:all 0.2s;">${d===365?'1 YEAR':d===180?'6 MONTHS':'30 DAYS'}</button>`).join('')}
+          <button onclick="closeWrappedView()" style="background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.12);border-radius:2px;padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;cursor:pointer;">✕</button>
         </div>
       </div>
-      <!-- TOP GENRE -->
-      <div style="margin-bottom:22px;">
-        <div style="font-size:9px;letter-spacing:0.14em;color:var(--muted);margin-bottom:10px;">TOP GENRES</div>
-        ${topGenresHTML||'<div style="color:var(--muted);font-size:12px;">No data yet</div>'}
-      </div>
-      <!-- HIGHLIGHTS -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px;">
-        <div style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.06);border-radius:2px;padding:12px;">
-          <div style="font-size:9px;letter-spacing:0.14em;color:var(--accent);margin-bottom:5px;">⭐ CROWD PLEASER</div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;line-height:1.2;">${esc(bestTitle)}</div>
-          ${bestAvg?`<div style="font-size:10px;color:var(--muted);margin-top:3px;">${bestAvg.toFixed(1)} avg</div>`:''}
+
+      <!-- TOP FILM POSTERS -->
+      ${posterStrip}
+
+      <!-- STAT ROW -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px;">
+        <div style="background:rgba(246,144,0,0.06);border:1px solid rgba(246,144,0,0.2);border-radius:2px;padding:16px 12px;text-align:center;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;letter-spacing:0.14em;color:rgba(246,144,0,0.65);margin-bottom:6px;">ENTRIES WATCHED</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.8rem;font-weight:900;color:var(--accent);line-height:1;">${data.uniqueCount}</div>
+          ${data.rewatches?`<div style="font-size:0.6rem;color:var(--muted);margin-top:3px;">+${data.rewatches} rewatch${data.rewatches!==1?'es':''}</div>`:''}
         </div>
-        <div style="background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.06);border-radius:2px;padding:12px;">
-          <div style="font-size:9px;letter-spacing:0.14em;color:var(--danger);margin-bottom:5px;">🔥 MOST CONTESTED</div>
-          <div style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:700;line-height:1.2;">${esc(clashTitle)}</div>
-          ${clashDelta?`<div style="font-size:10px;color:var(--muted);margin-top:3px;">Δ${clashDelta.toFixed(1)} split</div>`:''}
+        <div style="background:rgba(83,177,177,0.05);border:1px solid rgba(83,177,177,0.15);border-radius:2px;padding:16px 12px;text-align:center;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;letter-spacing:0.14em;color:rgba(83,177,177,0.65);margin-bottom:6px;">HOURS CONSUMED</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.8rem;font-weight:900;color:var(--cyan);line-height:1;">${hrs}</div>
+          <div style="font-size:0.6rem;color:var(--muted);margin-top:3px;">${Math.floor(hrs/24)} days</div>
+        </div>
+        <div style="background:rgba(96,165,250,0.05);border:1px solid rgba(96,165,250,0.18);border-radius:2px;padding:16px 12px;text-align:center;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;letter-spacing:0.14em;color:rgba(96,165,250,0.65);margin-bottom:6px;">OLLIE AVG</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.8rem;font-weight:900;color:#60A5FA;line-height:1;">${data.avgO?data.avgO.toFixed(1):'—'}</div>
+        </div>
+        <div style="background:rgba(244,114,182,0.05);border:1px solid rgba(244,114,182,0.18);border-radius:2px;padding:16px 12px;text-align:center;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.52rem;letter-spacing:0.14em;color:rgba(244,114,182,0.65);margin-bottom:6px;">JEMIMA AVG</div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:2.8rem;font-weight:900;color:#F472B6;line-height:1;">${data.avgJ?data.avgJ.toFixed(1):'—'}</div>
         </div>
       </div>
-      <!-- ACTION BUTTONS -->
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <button onclick="downloadWrappedCard(${days})" style="background:var(--accent);color:#fff;border:none;border-radius:2px;padding:9px 18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.1em;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='var(--a2)'" onmouseout="this.style.background='var(--accent)'">⬇ DOWNLOAD CARD</button>
-        <button onclick="openWrappedView(365)" style="background:${days===365?'rgba(246,144,0,0.2)':'transparent'};color:var(--text);border:1px solid ${days===365?'var(--accent)':'rgba(255,255,255,0.2)'};border-radius:2px;padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;">365 DAYS</button>
-        <button onclick="openWrappedView(180)" style="background:${days===180?'rgba(246,144,0,0.2)':'transparent'};color:var(--text);border:1px solid ${days===180?'var(--accent)':'rgba(255,255,255,0.2)'};border-radius:2px;padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;">6 MONTHS</button>
-        <button onclick="openWrappedView(30)" style="background:${days===30?'rgba(246,144,0,0.2)':'transparent'};color:var(--text);border:1px solid ${days===30?'var(--accent)':'rgba(255,255,255,0.2)'};border-radius:2px;padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;">30 DAYS</button>
-        <button onclick="closeWrappedView()" style="margin-left:auto;background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.12);border-radius:2px;padding:9px 14px;font-family:'JetBrains Mono',monospace;font-size:10px;cursor:pointer;">✕ CLOSE</button>
+
+      <!-- GENRES + HIGHLIGHTS ROW -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+        <!-- GENRES -->
+        <div>
+          <p style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;letter-spacing:0.14em;color:var(--muted);margin-bottom:12px;">TOP GENRES</p>
+          ${data.topGenres.length?data.topGenres.map((g,i)=>`
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <div style="flex:1;height:18px;background:rgba(0,0,0,0.2);border-radius:1px;overflow:hidden;">
+                <div style="height:100%;background:${genreColors[i]};opacity:0.8;width:${Math.round(g.count/maxGenreCount*100)}%;border-radius:1px;"></div>
+              </div>
+              <span style="font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;font-weight:700;white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis;color:${genreColors[i]};">${g.genre}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--muted);flex-shrink:0;">${g.count}×</span>
+            </div>`).join(''):'<p style="color:var(--muted);font-size:0.8rem;">No genre data</p>'}
+          ${data.topDirector?`<div style="margin-top:14px;padding:10px 12px;background:rgba(0,0,0,0.2);border-radius:2px;border-left:2px solid var(--accent);">
+            <p style="font-size:0.52rem;letter-spacing:0.12em;color:var(--muted);margin-bottom:3px;">MOST WATCHED DIRECTOR</p>
+            <p style="font-family:'Barlow Condensed',sans-serif;font-size:1.1rem;font-weight:800;color:var(--accent);">${esc(data.topDirector.name)}</p>
+            <p style="font-size:0.62rem;color:var(--muted);">${data.topDirector.count} film${data.topDirector.count!==1?'s':''} this period</p>
+          </div>`:''}
+        </div>
+        <!-- HIGHLIGHTS -->
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          ${data.topItem?`<div style="display:flex;gap:12px;background:rgba(0,0,0,0.2);border:1px solid rgba(246,198,36,0.2);border-radius:2px;padding:12px;cursor:pointer;" onclick="closeWrappedView();openCinema('${data.topItem.id}')">
+            <img src="${data.topItem.mediaImageUrl||''}" style="width:52px;height:78px;object-fit:cover;border-radius:2px;flex-shrink:0;" onerror="this.style.background='var(--surface)'">
+            <div>
+              <p style="font-size:0.52rem;letter-spacing:0.12em;color:var(--bay);margin-bottom:4px;">⭐ CROWD PLEASER</p>
+              <p style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:800;line-height:1.1;margin-bottom:4px;">${esc(data.topItem.title)}</p>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;font-weight:700;color:var(--bay);">⊛ ${bay(data.topItem).toFixed(2)}</p>
+            </div>
+          </div>`:''}
+          ${data.contestedItem?`<div style="display:flex;gap:12px;background:rgba(0,0,0,0.2);border:1px solid rgba(239,68,68,0.25);border-radius:2px;padding:12px;cursor:pointer;" onclick="closeWrappedView();openCinema('${data.contestedItem.id}')">
+            <img src="${data.contestedItem.mediaImageUrl||''}" style="width:52px;height:78px;object-fit:cover;border-radius:2px;flex-shrink:0;" onerror="this.style.background='var(--surface)'">
+            <div>
+              <p style="font-size:0.52rem;letter-spacing:0.12em;color:var(--danger);margin-bottom:4px;">🔥 MOST CONTESTED</p>
+              <p style="font-family:'Barlow Condensed',sans-serif;font-size:1rem;font-weight:800;line-height:1.1;margin-bottom:4px;">${esc(data.contestedItem.title)}</p>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;font-weight:700;color:var(--danger);">Δ ${dlt(data.contestedItem).toFixed(1)} split · O:${data.contestedItem.ollieRating} J:${data.contestedItem.jemimaRating}</p>
+            </div>
+          </div>`:''}
+          ${Object.keys(data.byType).length?`<div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${Object.entries(data.byType).map(([t,c])=>`<div style="background:rgba(83,177,177,0.07);border:1px solid rgba(83,177,177,0.15);border-radius:2px;padding:7px 12px;text-align:center;flex:1;">
+              <p style="font-size:0.52rem;color:var(--muted);margin-bottom:2px;">${t.toUpperCase()}</p>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:700;color:var(--text);">${c}</p>
+            </div>`).join('')}
+          </div>`:''}
+        </div>
+      </div>
+
+      <!-- FOOTER ACTIONS -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06);">
+        <button onclick="downloadWrappedCard(${days})" style="background:var(--accent);color:#fff;border:none;border-radius:2px;padding:10px 20px;font-family:'JetBrains Mono',monospace;font-size:0.68rem;font-weight:700;letter-spacing:0.1em;cursor:pointer;transition:background 0.2s;" onmouseover="this.style.background='var(--a2)'" onmouseout="this.style.background='var(--accent)'">⬇ DOWNLOAD CARD</button>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:rgba(83,177,177,0.35);letter-spacing:0.12em;margin-left:auto;">CODEX MEDIA ARCHIVAL SYSTEM</p>
       </div>
     </div>`;
   document.getElementById('wrapped-view').classList.add('open');
@@ -3298,7 +3478,7 @@ async function fetchMediaDetails(){
     const crew=detail.credits?.crew||[];
     const director=crew.find(c=>c.job==='Director');
     if(director)document.getElementById('ef-dir').value=director.name;
-    const cast=(detail.credits?.cast||[]).slice(0,6).map(c=>c.name);
+    const cast=(detail.credits?.cast||[]).slice(0,8).map(c=>c.name);
     if(cast.length)document.getElementById('ef-cast').value=cast.join(', ');
     toast('Fetched! Review fields and save.','✓');
   }catch(err){toast('TMDb fetch failed','✕');console.error(err);}
